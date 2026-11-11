@@ -9,8 +9,12 @@ mini-pjt/
 │   │   ├── vite.config.js
 │   │   └── src/
 │   │       ├── main.jsx           # 진입점
-│   │       ├── App.jsx            # 채팅 화면
-│   │       └── PlaceCard.jsx      # 추천 결과 카드
+│   │       ├── App.jsx            # 채팅 화면 (대화 · 세션 · 후보 선택 · 처리 중 표시)
+│   │       ├── PlaceCard.jsx      # 추천 결과 카드
+│   │       ├── api.js             # 백엔드 호출 (/chat, /health — 로컬 백엔드만)
+│   │       ├── format.js          # 표시용 함수 (날씨·대기·편의시설·응답 → 말풍선)
+│   │       ├── format.test.js     # format.js 테스트 (npm test)
+│   │       └── styles.css
 │   └── backend/             # FastAPI 백엔드
 │       ├── main.py              # FastAPI 진입점
 │       ├── api/                 # 우리가 제공하는 API

@@ -195,3 +195,22 @@ def test_history_is_in_memory_per_thread(chat):
     a("30개월")
     r = b("강남역")
     assert r["baby_age_months"] is None and "baby_age_months" in r["missing_inputs"]
+
+
+@pytest.mark.parametrize("text", [
+    "30개월이고 이번 토요일에 강남역에서 출발해요",
+    "내일 강남역에서 갈게요",
+    "모레는 강남역에서 출발",
+    "아기랑 강남역에서 내일",
+])
+def test_departure_after_date_or_age_words(text):
+    from backend.supervisor.intent import parse_departure
+    assert parse_departure(text, None) == "강남역"
+    assert parse_departure(text, "age") == "강남역"
+
+
+def test_full_message_while_age_is_asked(chat):
+    say = chat()
+    assert say("아기랑 나들이 가고 싶어요")["status"] == "ask"
+    r = say("30개월이고 이번 토요일에 강남역에서 출발해요")
+    assert r["status"] == "ready" and r["departure_location"]["name"].startswith("강남역")

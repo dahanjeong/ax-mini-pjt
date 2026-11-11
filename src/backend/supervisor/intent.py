@@ -105,6 +105,18 @@ def parse_nap(text: str) -> Optional[bool]:
     return None
 
 
+# particles left behind once date / age words are removed ("토요일에 강남역에서" -> "에 강남역에서")
+_LEFTOVER_PARTICLES = {"에", "에는", "엔", "이고", "이며", "고", "은", "는", "이", "가", "을", "를",
+                       "랑", "이랑", "와", "과", "하고", "도", "부터", "에서", "인데", "인데요"}
+
+
+def _drop_leading_particles(cand: str) -> str:
+    words = cand.split()
+    while words and words[0] in _LEFTOVER_PARTICLES:
+        words.pop(0)
+    return " ".join(words)
+
+
 def parse_departure(text: str, awaiting: Optional[str]) -> Optional[str]:
     cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", text)))
     m = re.search(r"출발지\s*(?:는|은|:)?\s*([^\s,.]+(?: [^\s,.]+)?)", cleaned)
@@ -114,7 +126,9 @@ def parse_departure(text: str, awaiting: Optional[str]) -> Optional[str]:
             return cand
     m = re.search(r"([^\s,.]+(?: [^\s,.]+)?)\s*에서", cleaned)
     if m:
-        return m.group(1).strip()
+        cand = _drop_leading_particles(m.group(1).strip())
+        if cand:
+            return cand
     if awaiting in ("departure", "departure_choice"):
         cand = _TAIL.sub("", cleaned).strip(" ,.!?")
         cand = re.sub(r"^(?:저는|제가|우리는|출발지는|에서)\s*", "", cand).strip()

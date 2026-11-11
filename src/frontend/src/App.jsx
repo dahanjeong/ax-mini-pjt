@@ -1,39 +1,144 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import PlaceCard from "./PlaceCard.jsx";
+import { ChatError, checkHealth, sendChat } from "./api.js";
+import { toAssistantMessage } from "./format.js";
 
-const API = "http://localhost:8000";
+const EXAMPLES = [
+  "30개월 아기랑 이번 토요일에 강남역에서 출발해요",
+  "18개월, 내일 판교역에서 실내 위주로 가고 싶어요",
+  "24개월 아기, 모레 잠실역에서 서울숲 같은 곳",
+];
+const WELCOME = {
+  role: "assistant",
+  texts: ["안녕하세요! 아기 월령, 출발지, 날짜를 알려주시면 아기와 함께 가기 좋은 곳 5곳을 찾아드려요."],
+  cards: [],
+  choices: [],
+};
 
 export default function App() {
-  const [status, setStatus] = useState("확인 중...");
+  const [messages, setMessages] = useState([WELCOME]);
+  const [sessionId, setSessionId] = useState(null);
+  const [input, setInput] = useState("");
+  const [pending, setPending] = useState(false);
+  const [online, setOnline] = useState(true);
+  const endRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/health`)
-      .then((r) => r.json())
-      .then((d) => setStatus(d.status))
-      .catch(() => setStatus("서버에 연결할 수 없음"));
+    checkHealth().then(setOnline);
   }, []);
 
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, pending]);
+
+  async function send(text) {
+    const message = text.trim();
+    if (!message || pending) return;
+    setMessages((m) => [...m, { role: "user", texts: [message] }]);
+    setInput("");
+    setPending(true);
+    try {
+      const view = await sendChat(message, sessionId);
+      setSessionId(view.session_id);
+      setOnline(true);
+      setMessages((m) => [...m, toAssistantMessage(view)]);
+    } catch (e) {
+      const text = e instanceof ChatError ? e.message : "알 수 없는 오류가 생겼어요.";
+      setMessages((m) => [...m, { role: "error", texts: [text] }]);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function restart() {
+    if (sessionId) send("처음부터 다시");
+  }
+
+  const showExamples = messages.length === 1 && !pending;
+
   return (
-    <main>
-      <h1>아기와 나들이</h1>
-      <p>백엔드 상태: {status}</p>
-      <ChatMessages messages={[]} />
-    </main>
+    <div className="app">
+      <header className="topbar">
+        <h1>아기랑 나들이</h1>
+        <div className="topbar-right">
+          {!online && <span className="offline">서버 연결 안 됨</span>}
+          <button type="button" className="ghost" onClick={restart} disabled={!sessionId || pending}>
+            처음부터
+          </button>
+        </div>
+      </header>
+
+      <main className="chat" aria-live="polite">
+        {messages.map((m, i) => (
+          <Message key={i} message={m} onChoose={send} disabled={pending} />
+        ))}
+        {showExamples && (
+          <div className="examples">
+            {EXAMPLES.map((ex) => (
+              <button type="button" key={ex} className="chip" onClick={() => send(ex)}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        )}
+        {pending && (
+          <div className="bubble assistant pending">
+            <span className="dots" aria-hidden="true" />
+            장소를 찾고 날씨·후기를 확인하고 있어요. 추천은 10~20초쯤 걸려요.
+          </div>
+        )}
+        <div ref={endRef} />
+      </main>
+
+      <form
+        className="composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(input);
+        }}
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="예: 30개월 아기랑 이번 토요일에 강남역에서 출발해요"
+          maxLength={500}
+          disabled={pending}
+          aria-label="메시지"
+        />
+        <button type="submit" disabled={pending || !input.trim()}>
+          보내기
+        </button>
+      </form>
+    </div>
   );
 }
 
-// Chat transcript: text bubbles plus place cards for any message carrying result_cards.
-export function ChatMessages({ messages }) {
+function Message({ message, onChoose, disabled }) {
+  const { role, texts, notice, cards = [], choices = [] } = message;
   return (
-    <section className="chat">
-      {messages.map((m, i) => (
-        <div key={i} className={`bubble ${m.role}`}>
-          {m.text && <p>{m.text}</p>}
-          {(m.result_cards || []).map((c, j) => (
-            <PlaceCard key={j} card={c} />
-          ))}
+    <div className={`turn ${role}`}>
+      {texts.map((t, i) => (
+        <div key={i} className={`bubble ${role}${i > 0 ? " follow" : ""}`}>
+          {t}
         </div>
       ))}
-    </section>
+      {notice && <div className="notice">{notice}</div>}
+      {choices.length > 0 && (
+        <div className="choices">
+          {choices.map((c) => (
+            <button type="button" key={c.send} className="chip" disabled={disabled} onClick={() => onChoose(c.send)}>
+              {c.send}. {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {cards.length > 0 && (
+        <div className="cards">
+          {cards.map((card, i) => (
+            <PlaceCard key={`${card.name}-${i}`} card={card} rank={i + 1} />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
