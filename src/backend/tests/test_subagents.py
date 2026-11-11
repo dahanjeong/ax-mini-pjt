@@ -232,11 +232,13 @@ def test_pick_varied_caps_each_kind_at_two():
     assert [p["name"] for p in pick_varied(kids, n=3)] == ["키즈0", "키즈1", "키즈2"]   # nothing else to use
 
 
-def test_group_facilities_without_plain_entry_picks_the_best_outing_part():
+def test_group_facilities_without_plain_entry_shows_the_shared_name():
     ps = [ent("서울대공원 산림욕장", 37.430, src="tourapi", km=7.9),
           ent("서울대공원 어린이동물원", 37.431, km=7.8)]
-    out = place.group_facilities(ps)
-    assert [(g["name"], g["includes"]) for g in out] == [("서울대공원 어린이동물원", ["서울대공원 산림욕장"])]
+    (g,) = place.group_facilities(ps)
+    assert g["name"] == "서울대공원"
+    assert g["includes"] == ["서울대공원 어린이동물원", "서울대공원 산림욕장"]
+    assert g["lat"] == 37.431          # location / ids of the best outing part (the children's zoo)
 
 
 def test_group_facilities_chains_members():

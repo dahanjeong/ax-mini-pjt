@@ -159,7 +159,8 @@ def same_facility(a: dict, b: dict) -> bool:
 
 def group_facilities(places: list[dict]) -> list[dict]:
     """Collapse entries of one facility (Kakao lists zoo sections, rides, ... separately)
-    into one candidate; the other names go to `includes`. Representative: the plain
+    into one candidate shown under the shared name ("서울대공원"); the entries' own names go
+    to `includes`. The representative (whose ids, facilities and location are used): the plain
     facility entry ("서울대공원") if there is one, else the part with the best outing grade
     once the shared name is removed ("어린이동물원" over "산림욕장"), then the shorter
     name, then a TourAPI-listed one."""
@@ -174,8 +175,21 @@ def group_facilities(places: list[dict]) -> list[dict]:
     out = []
     for g in groups:
         rep = _representative(g)
-        out.append({**rep, "includes": [m["name"] for m in g if m is not rep]})
+        name = _shared_name(g) or rep["name"]
+        out.append({**rep, "name": name, "includes": [m["name"] for m in g if m["name"] != name]})
     return out
+
+
+def _shared_name(members: list[dict]) -> Optional[str]:
+    """'서울대공원' for '서울대공원 맹수사' + '서울대공원 산림욕장': the shared name when it is the
+    whole first word of a member (else None)."""
+    if len(members) < 2:
+        return None
+    shared = os.path.commonprefix([_compact(m["name"]) for m in members])
+    for m in members:
+        if _first_word(m["name"]) == shared:
+            return shared
+    return None
 
 
 def _representative(members: list[dict]) -> dict:

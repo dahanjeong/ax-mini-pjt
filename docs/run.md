@@ -13,8 +13,8 @@ API 키는 저장소 루트의 `.env`에 둔다 (git에 올리지 않음).
 
 ### Bedrock
 - `.env`의 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`로 인증한다. 해당 IAM 사용자에 `bedrock:InvokeModel` 권한이 있어야 한다.
-- AWS 콘솔(us-east-1)의 Bedrock 모델 액세스에서 Claude Sonnet 4.6, Claude Haiku 4.5, Titan Text Embeddings V2를 활성화해야 한다.
-- 기본값: 지역 `us-east-1`, 판정 모델 `global.anthropic.claude-sonnet-4-6`, 추출·분류 모델 `global.anthropic.claude-haiku-4-5-20251001-v1:0`, 임베딩 `amazon.titan-embed-text-v2:0`. 바꾸려면 `.env`에 `BEDROCK_REGION`, `BEDROCK_MODEL_ID`, `BEDROCK_FAST_MODEL_ID`, `BEDROCK_EMBED_MODEL_ID`를 넣는다.
+- AWS 콘솔(us-east-1)의 Bedrock 모델 액세스에서 Claude Sonnet 4.6, Claude Sonnet 4.5, Claude Haiku 4.5, Titan Text Embeddings V2를 활성화해야 한다.
+- 작업별 (지역, 모델) 체인 — 429면 다음 항목으로: 판정은 Sonnet만(us-west-2·ap-northeast-2·us-east-1의 Sonnet 4.6 → Sonnet 4.5), 입력 추출은 Haiku 4.5(ap-northeast-2 → us-east-1 → us-west-2), 실내/야외는 Haiku 4.5(us-west-2 → us-east-1). 세 지역 모두 Bedrock 모델 액세스가 켜져 있어야 한다. 바꾸려면 `.env`에 `BEDROCK_JUDGE_MODELS` 등을 `지역/모델ID,지역/모델ID` 형식으로 넣는다. 임베딩은 `BEDROCK_REGION`(기본 us-east-1)의 `BEDROCK_EMBED_MODEL_ID`(기본 `amazon.titan-embed-text-v2:0`).
 
 ## 백엔드 (FastAPI, 포트 8000)
 저장소 루트에서:

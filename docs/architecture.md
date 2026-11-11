@@ -46,7 +46,7 @@
 ```
 
 - **후보 수집 (`collect`):** TourAPI(관광지·문화시설·레포츠)와 카카오(관광명소·문화시설 + 공원·키즈카페·동물원 키워드)를 반경 안에서 모은다. 둘 다 반경이 최대 20km라, 더 넓으면 TourAPI는 중심 + 바깥 고리 6곳에서 나눠 검색한다. 아기 나들이에 맞는 종류만 허용 목록으로 남긴다 (TourAPI `cat3` 코드, 카카오 카테고리명).
-- **같은 시설 묶기 (`group_facilities`):** 띄어쓰기를 뺀 이름의 공통 앞부분(4글자 이상)이 한쪽 이름의 첫 단어 전체이고 1km 안에 있으면 한 시설로 묶는다(예: 서울대공원 / 서울대공원 제1아프리카관). 대표는 공통 이름만 있는 항목("서울대공원")이 있으면 그것, 없으면 공통 이름을 뺀 부분의 나들이 등급이 가장 높은 항목("산림욕장"보다 "어린이동물원") → 짧은 이름 → TourAPI 등록 순이다. 나머지 이름은 카드의 `includes`에 남긴다.
+- **같은 시설 묶기 (`group_facilities`):** 띄어쓰기를 뺀 이름의 공통 앞부분(4글자 이상)이 한쪽 이름의 첫 단어 전체이고 1km 안에 있으면 한 시설로 묶는다(예: 서울대공원 / 서울대공원 제1아프리카관). 카드 이름은 공통 이름("서울대공원")으로 보여주고, 묶인 항목 이름은 카드의 `includes`에 남긴다. 위치·편의시설에 쓰는 대표 항목은 공통 이름만 있는 항목이 있으면 그것, 없으면 공통 이름을 뺀 부분의 나들이 등급이 가장 높은 항목("산림욕장"보다 "어린이동물원") → 짧은 이름 → TourAPI 등록 순이다.
 - **후보 선정 (`preselect`, 15곳):** 거리 구간(0~5km / 5~20km / 20km~반경)마다 같은 몫을 뽑는다. 구간 안에서는 나들이 목적지 등급(`outing_grade` — A: 동물원·테마파크·아쿠아리움·수목원·생태/습지공원·과학관·체험농장·대공원·"어린이" 장소, B: 박물관·체험·호수·민속마을·고궁·공원, C: 키즈카페·실내 놀이터·도서관·갤러리·근린공원) → 대표 사진 있음 → 가까운 순. 몫을 못 채운 구간의 자리는 나머지 중 상위로 채운다.
 - 실패한 외부 API는 각 서브그래프의 `failed_sources`(누적 리듀서)에 모인다.
 - 편의시설 최종 판정(공공데이터 → 후기 언급 → 정보 없음)은 장소 탐색과 후기 결과가 모두 필요해서 Supervisor가 합칠 때 `place.resolve_facilities`로 한다.
@@ -141,15 +141,16 @@ src/backend/
 
 ## Bedrock
 
-| 용도 | 모델 | 호출 |
+| 용도 | (지역, 모델) 체인 — 429면 다음 항목 | 호출 |
 |---|---|---|
-| 월령 적합도 판정 · 후기 3줄 요약 | `global.anthropic.claude-sonnet-4-6` (us-east-1) | Anthropic SDK `AnthropicBedrock`. 도구 호출을 강제(`tool_choice`)해 정해진 스키마의 JSON으로만 받고, 받은 뒤 다시 검증한다 |
-| 입력 추출(매 메시지) · 실내/야외 판정 | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (us-east-1) | 같은 방식. 정해진 형식을 채우는 단순 작업이라 빠르고 저렴한 모델을 쓰고, 요청 한도도 Sonnet과 나뉜다 |
+| 월령 적합도 판정 · 후기 3줄 요약 (Sonnet만) | us-west-2 `us.`4.6 → ap-northeast-2 `global.`4.6 → us-east-1 `us.`4.6 → us-west-2 `global.`4.6 → Sonnet 4.5 조합들 | Anthropic SDK `AnthropicBedrock` (지역별 클라이언트). 도구 호출을 강제(`tool_choice`)해 정해진 스키마의 JSON으로만 받고, 받은 뒤 다시 검증한다 |
+| 입력 추출(매 메시지, Haiku 4.5) | ap-northeast-2 `global.` → us-east-1 `global.` → us-west-2 `global.` | 같은 방식 |
+| 실내/야외 판정 (Haiku 4.5) | us-west-2 `us.` → us-east-1 `us.` → us-west-2 `global.` | 같은 방식 |
 | 임베딩 (취향 매칭) | `amazon.titan-embed-text-v2:0` (512차원, 정규화) | `boto3` `bedrock-runtime` `invoke_model`. 한 번에 한 문장이라 병렬 호출 + 프로세스 내 캐시 |
 
 - `anthropic` SDK는 1.17.0으로 고정한다. 2.x는 API 버전 `2026-10-21`을 보내는데, Bedrock은 이 버전을 Claude 4.7 이상에만 받는다.
-- 요청 한도: 모델별 동시 요청을 제한한다(Sonnet 6, Haiku 8, 나머지는 대기). 429·5xx는 SDK가 지수 백오프로 최대 3번 재시도하고, Titan은 boto3 `adaptive` 모드로 재시도한다. 대기와 재시도를 포함한 제한 시간은 20초다.
-- 모델 ID·지역은 `.env`의 `BEDROCK_MODEL_ID`(판정), `BEDROCK_FAST_MODEL_ID`(추출·분류), `BEDROCK_REGION`, `BEDROCK_EMBED_MODEL_ID`로 바꿀 수 있다 (없으면 위 기본값).
+- 요청 한도: Bedrock 한도는 지역·모델·추론 프로파일(`global.`/`us.`)별로 잡히고 계정을 여러 사람이 함께 쓰므로, 작업마다 다른 지역·모델에서 시작한다(us-east-1, us-west-2, ap-northeast-2). 429(일일 토큰 한도 등)가 나면 체인의 다음 모델로 넘어간다. 모델별 동시 요청은 제한한다(판정 6, 추출·분류 8, 나머지는 대기). SDK 재시도는 1번이고, Titan은 boto3 `adaptive` 모드로 재시도한다. 대기와 재시도를 포함한 제한 시간은 20초다.
+- 작업별 체인은 `.env`의 `BEDROCK_JUDGE_MODELS`, `BEDROCK_EXTRACT_MODELS`, `BEDROCK_CLASSIFY_MODELS`에 `지역/모델ID`를 쉼표로 이어 바꿀 수 있다(지역을 빼면 `BEDROCK_REGION`). 지역은 `BEDROCK_REGION`, 임베딩은 `BEDROCK_EMBED_MODEL_ID` (없으면 기본값).
 
 ## 공통 원칙
 - 외부 API 하나가 실패하거나 제한 시간(공공·검색 API 5초, Bedrock LLM·임베딩 20초) 안에 응답하지 않으면 해당 항목만 "정보를 불러오지 못함"으로 표시한다. 임베딩이 실패하면 취향 매칭 없이 기존 순위로 추천하고 그 사실을 안내한다.
