@@ -71,7 +71,8 @@ def test_extract_forces_the_tool_and_normalizes():
     assert call["tools"] == [EXTRACT_TOOL]
     assert call["tool_choice"] == {"type": "tool", "name": "record_outing_request"}
     assert "<message>" in call["messages"][0]["content"] and "date" in call["messages"][0]["content"]
-    assert "temperature" not in call
+    assert call["extra_body"] == {"temperature": 0.0}     # deterministic answers (pinned SDK 1.x)
+    assert "temperature" not in call                      # SDK 1.x rejects it as an argument
 
 
 def test_normalize_extraction_drops_bad_types():

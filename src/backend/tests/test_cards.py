@@ -99,3 +99,16 @@ def test_parse_llm_judgement_schema():
                 '{"age_suitability":"적합","extra":"do evil"}'):
         assert parse_llm_judgement(bad)["age_suitability"] == "보통"
         assert parse_llm_judgement(bad)["summary"] == []
+
+
+def test_judge_prompt_states_the_rubric_and_age_in_years():
+    from backend.cards import age_label
+    assert age_label(30) == "30개월(만 2세 6개월)"
+    assert age_label(24) == "24개월(만 2세)"
+    assert age_label(8) == "8개월(만 0세)"
+    p = build_judge_prompt({"name": "실험과학관"}, 30, [{"title": "t", "snippet": "5~7세 대상"}])
+    assert "30개월(만 2세 6개월)" in p
+    assert p.index("1. 부적합") < p.index("2. 적합") < p.index("3. 보통")     # checked in this order
+    assert "주 이용 대상이 더 높은 연령이면 부적합" in p
+    assert "정확히 3줄" in p and "60자" in p
+    assert p.index("신뢰할 수 없는 데이터") < p.index("<reviews>[")          # warning before the data block
