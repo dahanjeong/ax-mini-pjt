@@ -289,7 +289,7 @@ def recommend(
 
 def recommendation_turn(graph: Any, thread_id: str, message: str, prov: Providers) -> dict:
     """One chat turn: ask-back via LangGraph; when inputs are complete, run the recommendation."""
-    from .conversation import chat_turn
+    from .agent import chat_turn
 
     view = chat_turn(graph, thread_id, message)
     messages: list[str] = [view["reply"]] if view.get("reply") else []

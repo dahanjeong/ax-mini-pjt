@@ -1,4 +1,4 @@
-from backend.app.cards import (
+from backend.cards import (
     CARD_FIELDS, build_card, build_cards, build_judge_prompt, parse_llm_judgement,
 )
 from backend.tests.test_recommendation import FAC_ALL, FAC_NONE, make_providers, run, tp

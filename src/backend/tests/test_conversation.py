@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from backend.app.conversation import Deps, build_graph, chat_turn
+from backend.agent import Deps, build_graph, chat_turn
 
 TODAY = date(2026, 11, 11)  # Wednesday; forecast range = TODAY .. TODAY+10
 

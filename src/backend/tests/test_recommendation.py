@@ -3,8 +3,8 @@ from datetime import date
 
 import pytest
 
-from backend.app.conversation import Deps, build_graph
-from backend.app.recommend import (
+from backend.agent import Deps, build_graph
+from backend.tools import (
     Providers,
     evaluate_bad_day,
     max_drive_hours,
@@ -186,7 +186,7 @@ def test_ranking_suitability_then_facilities_then_distance():
 
 
 def test_missing_and_failed_facility_info_count_as_zero():
-    from backend.app.recommend import _count
+    from backend.tools import _count
 
     assert _count({"a": {"status": "정보를 불러오지 못함"}, "nursing_room": {"status": "있음"},
                    "parking": {"status": "정보 없음"}, "stroller_rental": {"status": "없음"}}) == 1

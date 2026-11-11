@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-FRONTEND = ROOT / "frontend"
+ROOT = Path(__file__).resolve().parents[3]
+FRONTEND = ROOT / "src" / "frontend"
 KEY_NAMES = [
     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_BEARER_TOKEN_BEDROCK",
     "LANGSMITH_API_KEY", "LANGSMITH_TRACING", "PUBLIC_DATA_DECODED_KEY",
@@ -21,7 +21,7 @@ EXTERNAL_HOSTS = [
 
 def _env_values():
     vals = []
-    for p in (ROOT / ".env", ROOT / "backend" / ".env"):
+    for p in (ROOT / ".env", ROOT / "src" / "backend" / ".env"):
         if p.exists():
             for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
                 if "=" in line and not line.strip().startswith("#"):

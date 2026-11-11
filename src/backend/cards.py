@@ -10,7 +10,7 @@ import json
 import re
 from typing import Any
 
-from .recommend import FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, SUIT_RANK, UNKNOWN
+from .tools import FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, SUIT_RANK, UNKNOWN
 
 CARD_FIELDS = (
     "name", "distance_km", "indoor_outdoor", "age_suitability", "facilities",
