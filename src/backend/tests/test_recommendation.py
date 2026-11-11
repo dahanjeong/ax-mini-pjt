@@ -187,12 +187,15 @@ def test_missing_and_failed_facility_info_count_as_zero():
                    "parking": {"status": "정보 없음"}, "stroller_rental": {"status": "없음"}}) == 1
 
 
-def test_preselect_keeps_only_15_closest():
-    tour = [tp(i, f"장소{i:02d}", 2 + i) for i in range(20)]
+def test_preselect_keeps_15_spread_over_distance_bands():
+    tour = [tp(i, f"장소{i:02d}", 2 + i) for i in range(20)]          # 2 .. 21 km, all the same kind
     prov, calls = make_providers(tour)
     res = run(prov)
-    assert sorted(calls["judged"]) == [f"장소{i:02d}" for i in range(15)]
-    assert names(res) == [f"장소{i:02d}" for i in range(5)]
+    judged = sorted(calls["judged"])
+    assert len(judged) == 15
+    # 0-5 km: 3 places, 20+ km: 2 places -> both bands fully kept; 5-20 km fills the rest, nearest first
+    assert {"장소00", "장소01", "장소02", "장소18", "장소19"} <= set(judged)
+    assert names(res)[:3] == ["장소00", "장소01", "장소02"]
 
 
 # ------------------------------------------------------------------ bad days

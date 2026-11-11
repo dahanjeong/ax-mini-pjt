@@ -21,6 +21,9 @@ mini-pjt/
 │       │   ├── environment.py     # 환경 (날씨 · 미세먼지 · 나쁜 날 판정)
 │       │   ├── review.py          # 후기·적합도 (후기 · LLM 판정·요약 · 실내/야외)
 │       │   └── preference.py      # 취향 매칭 (기준 장소 조회 · 프로필 · 임베딩 유사도)
+│       ├── apis/                  # 외부 API 클라이언트
+│       │   ├── kakao.py           # 카카오 로컬 (출발지 · 장소 · 키워드)
+│       │   └── tourapi.py         # TourAPI (장소 · 편의시설 · 개요 · 키워드)
 │       ├── tools.py               # 도메인 도구 (외부 API 호출 · 타임아웃 · 실패 기록)
 │       ├── bedrock.py             # Bedrock: Claude(추출 · 판정) · Titan 임베딩
 │       ├── config.py              # .env 로드 · Bedrock 설정
@@ -29,6 +32,7 @@ mini-pjt/
 │       ├── cards.py               # 결과 카드 생성 · LLM 출력 검증
 │       └── tests/                 # pytest 테스트
 ├── data/                          # 사용한 문서·데이터
+│   └── tourapi_categories.json    # TourAPI 분류 코드표 (cat3 → 이름)
 ├── evaluation/                    # 인-아웃 세트와 자체 평가 결과
 │   ├── test_queries.csv           # 인-아웃 세트 (예정)
 │   ├── round1_report.md           # 1차 자체 평가 결과 (예정)

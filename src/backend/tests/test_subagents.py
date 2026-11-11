@@ -115,3 +115,43 @@ def test_review_graph_review_failure():
     assert out["review_summary"] == [FAIL]
     assert out["mentions_failed"] is True
     assert "naver" in out["failed_sources"]
+
+
+# ---------------------------------------------------------------- preselection
+
+def cand(name, km, cat="", types=("tourapi:12",), image=False):
+    return {"name": name, "distance_km": km, "category": cat, "types": list(types), "has_image": image}
+
+
+def test_kind_tier():
+    assert place.kind_tier(cand("서울대공원", 10, "A02020600")) == 1             # 테마공원 (TourAPI code)
+    assert place.kind_tier(cand("국립과천과학관", 20, "A02060300")) == 1          # 과학관 by name
+    assert place.kind_tier(cand("키즈랜드", 1, "음식점 > 카페 > 테마카페 > 키즈카페", ("kakao:KIDS",))) == 1
+    assert place.kind_tier(cand("어린이박물관", 3, "A02060100")) == 1             # 어린이 in name
+    assert place.kind_tier(cand("국립중앙박물관", 8, "A02060100")) == 2
+    assert place.kind_tier(cand("올림픽공원", 9, "여행 > 공원")) == 2
+    assert place.kind_tier(cand("역삼까치공원", 0.3, "여행 > 공원 > 도시근린공원")) == 3   # small park
+    assert place.kind_tier(cand("까치어린이공원", 0.5, "여행 > 공원")) == 3               # not tier 1
+    assert place.kind_tier(cand("유나갤러리", 0.2, "문화,예술 > 문화시설 > 미술관")) == 3
+    assert place.kind_tier(cand("동네도서관", 2, "A02060900")) == 3
+
+
+def test_preselect_spreads_bands_and_prefers_better_kinds():
+    near = [cand(f"갤러리{i}", 0.1 * i + 0.1, "A02060500") for i in range(10)]
+    near += [cand("과학관", 4.0, "A02060300")]
+    mid = [cand(f"공원{i}", 6 + i, "A02020700") for i in range(8)] + [cand("수목원", 19, "A01010700")]
+    far = [cand(f"도서관{i}", 21 + i, "A02060900") for i in range(3)] + [cand("테마파크", 40, "A02020600")]
+    picked = place.preselect(near + mid + far, radius=46.2, n=15)
+    names = [p["name"] for p in picked]
+    assert len(picked) == 15 and [p["distance_km"] for p in picked] == sorted(p["distance_km"] for p in picked)
+    assert {"과학관", "수목원", "테마파크"} <= set(names)                  # tier 1 wins inside each band
+    assert sum(p["distance_km"] < 5 for p in picked) == 5                 # equal share per band
+    assert sum(p["distance_km"] >= 20 for p in picked) == 4               # band has only 4 -> rest refilled
+    assert sum(5 <= p["distance_km"] < 20 for p in picked) == 6
+
+
+def test_preselect_small_radius_and_image_tiebreak():
+    ps = [cand("A", 1, "A02020700"), cand("B", 2, "A02020700", image=True), cand("C", 7, "A02020700")]
+    picked = place.preselect(ps, radius=8, n=2)                          # bands 0-5, 5-8
+    assert [p["name"] for p in picked] == ["B", "C"]                      # B: same tier, has an image
+    assert place.preselect([], radius=30) == []

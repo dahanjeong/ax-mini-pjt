@@ -103,11 +103,14 @@ def _norm_place(raw: dict, source: str, dep: tuple[float, float]) -> Optional[di
         "address": raw.get("address", ""), "description": raw.get("description", ""),
         "place_source": [source], "ids": {source: raw.get("id")}, "types": [ptype],
         "distance_km": haversine_km(dep[0], dep[1], float(lat), float(lng)),
+        # kept for preselection: TourAPI cat3 code or Kakao category_name, and image presence
+        "category": raw.get("category") or (raw.get("description", "") if source == "kakao" else ""),
+        "has_image": bool(raw.get("image")),
     }
 
 
 def collect_candidates(prov: Providers, dep: tuple[float, float], radius: float) -> dict:
-    """Candidates within `radius`, merged and nearest first (at most PRESELECT_N)."""
+    """Candidates within `radius`, merged, then PRESELECT_N picked by `preselect`."""
     failed: list[str] = []
     raw: list[dict] = []
     for source, fn in (("tourapi", prov.tour_search), ("kakao", prov.kakao_search)):
@@ -121,8 +124,60 @@ def collect_candidates(prov: Providers, dep: tuple[float, float], radius: float)
             if p and p["distance_km"] <= radius:
                 raw.append(p)
     merged = merge_places(raw)
-    merged.sort(key=lambda p: p["distance_km"])
-    return {"candidates": merged[:PRESELECT_N], "failed_sources": failed}
+    return {"candidates": preselect(merged, radius), "failed_sources": failed}
+
+
+# ---------------------------------------------------------------- preselection
+
+BAND_EDGES_KM = (0.0, 5.0, 20.0)
+# kind tiers (1 = best outing destination for a baby); first match wins, small parks first
+SMALL_PARK_WORDS = ("근린공원", "소공원", "어린이공원", "쌈지공원")
+TIER1_WORDS = ("테마파크", "테마공원", "동물원", "아쿠아리움", "수목원", "식물원", "자연생태", "과학관",
+               "키즈카페", "워터파크", "희귀동")
+TIER1_NAME_WORDS = ("어린이", "키즈", "유아")
+TIER2_WORDS = ("박물관", "공원", "체험", "호수", "휴양림", "민속마을", "고궁", "생태", "관광농원", "도예촌",
+               "해수욕장", "썰매장")
+# TourAPI cat3 codes -> names used by the tiers above (see data/tourapi_categories.json)
+TOUR_CAT3_NAMES = {
+    "A01010500": "자연생태관광지", "A01010600": "자연휴양림", "A01010700": "수목원", "A01011200": "해수욕장",
+    "A01011700": "호수", "A01020100": "희귀동.식물", "A02010100": "고궁", "A02010600": "민속마을",
+    "A02020600": "테마공원", "A02020700": "공원", "A02030100": "농.산.어촌 체험", "A02030200": "전통체험",
+    "A02030400": "이색체험", "A02060100": "박물관", "A02060300": "전시관", "A02060500": "미술관/화랑",
+    "A02060900": "도서관", "A03021400": "썰매장",
+}
+
+
+def kind_tier(p: dict) -> int:
+    """1 = theme park, zoo, arboretum, science museum, kids places, ...;
+    2 = museum, park, hands-on experience, lake, ...; 3 = library, gallery, small park, other."""
+    name = p.get("name", "")
+    cat = p.get("category", "")
+    cat = TOUR_CAT3_NAMES.get(cat, cat)
+    text = f"{name} {cat}"
+    if any(w in text for w in SMALL_PARK_WORDS):
+        return 3
+    if any(w in cat or w in name for w in TIER1_WORDS) or any(w in name for w in TIER1_NAME_WORDS)             or "kakao:KIDS" in p.get("types", []):
+        return 1
+    if any(w in text for w in TIER2_WORDS):
+        return 2
+    return 3
+
+
+def preselect(places: list[dict], radius: float, n: int = PRESELECT_N) -> list[dict]:
+    """Pick `n` candidates spread over distance bands (0-5 km, 5-20 km, 20 km-radius):
+    an equal share per band, chosen by kind tier, then image presence, then distance;
+    slots a band cannot fill go to the best of the rest."""
+    def key(p):
+        return (kind_tier(p), not p.get("has_image"), p["distance_km"])
+
+    edges = [e for e in BAND_EDGES_KM if e < radius] + [radius]
+    bands = [sorted((p for p in places if lo <= p["distance_km"] < hi or (hi == radius and p["distance_km"] == hi)),
+                    key=key) for lo, hi in zip(edges, edges[1:])]
+    share = n // len(bands) if bands else n
+    picked = [p for b in bands for p in b[:share]]
+    rest = sorted((p for b in bands for p in b[share:]), key=key)
+    picked += rest[:max(0, n - len(picked))]
+    return sorted(picked, key=lambda p: p["distance_km"])
 
 
 def collect_by_keywords(prov: Providers, dep: tuple[float, float], radius: float,
@@ -216,7 +271,10 @@ def build_graph(prov: Providers):
         cands = []
         for i, p in enumerate(state.get("candidates") or []):
             raw, failed = by_index.get(i, (None, ["public_data"]))
-            cands.append({**p, "public_facilities": raw, "public_failed_sources": failed})
+            extra = {}
+            if isinstance(raw, dict) and raw.get("overview"):
+                extra["description"] = raw["overview"]      # TourAPI overview beats a category label
+            cands.append({**p, **extra, "public_facilities": raw, "public_failed_sources": failed})
         return {"candidates": cands}
 
     g = StateGraph(PlaceState)
