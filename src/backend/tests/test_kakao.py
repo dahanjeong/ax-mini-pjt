@@ -2,8 +2,8 @@
 import httpx
 import pytest
 
-from backend.agents import place
-from backend.apis.kakao import BASE_URL, KakaoClient, is_allowed, place_type
+from backend.agents import candidates
+from backend.integrations.kakao import BASE_URL, KakaoClient, is_allowed, place_type
 
 
 def doc(id_, name, lat, lng, code="AT4", cat="여행 > 관광,명소", road="서울 강남구 테헤란로"):
@@ -86,7 +86,7 @@ def test_category_search_caps_radius_pages_and_normalizes():
     p = out[0]
     assert p["source"] == "kakao" and p["type"] == "kakao:AT4" and p["lat"] == 37.5
     # the raw place passes the place agent's normalization
-    assert place._norm_place(p, "kakao", (37.4979, 127.0276)) is not None
+    assert candidates._norm_place(p, "kakao", (37.4979, 127.0276)) is not None
 
 
 def test_category_search_keeps_only_allowed_kinds_and_dedupes():
@@ -109,7 +109,7 @@ def test_category_search_keeps_only_allowed_kinds_and_dedupes():
     assert [(p["name"], p["type"]) for p in out] == [
         ("어린이박물관", "kakao:CT1"), ("근린공원", "kakao:PARK"), ("키즈랜드", "kakao:KIDS")]
     # every kept place passes the place agent's type filter
-    assert all(place._norm_place(p, "kakao", (37.5, 127.0)) for p in out)
+    assert all(candidates._norm_place(p, "kakao", (37.5, 127.0)) for p in out)
 
 
 def test_allowlist_and_types():
@@ -141,7 +141,7 @@ def test_http_errors_raise_so_guarded_marks_the_source_failed():
 
 
 def test_missing_key_is_reported(monkeypatch):
-    monkeypatch.setattr("backend.apis.kakao.load_env", lambda: None)
+    monkeypatch.setattr("backend.integrations.kakao.load_env", lambda: None)
     monkeypatch.delenv("KAKAO_KEY", raising=False)
     with pytest.raises(RuntimeError):
         KakaoClient()

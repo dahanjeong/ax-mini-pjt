@@ -5,8 +5,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from backend.agents import place
-from backend.apis.tourapi import (
+from backend.core.geo import haversine_km
+from backend.agents import candidates, place
+from backend.integrations.tourapi import (
     ALLOWED_CAT3, BASE_URL, TourAPIError, TourClient, facility_status, search_centers,
 )
 from backend.tests.test_recommendation import make_providers, tp
@@ -65,7 +66,7 @@ def test_search_centers():
     assert len(search_centers(37.5, 127.0, 15)) == 1
     centers = search_centers(37.5, 127.0, 46.2)
     assert len(centers) == 7
-    ring = [place.haversine_km(37.5, 127.0, lat, lng) for lat, lng in centers[1:]]
+    ring = [haversine_km(37.5, 127.0, lat, lng) for lat, lng in centers[1:]]
     assert all(abs(d - 26.2) < 0.5 for d in ring)
 
 
@@ -84,7 +85,7 @@ def test_location_search_filters_categories_radius_and_duplicates():
     assert sorted(p["name"] for p in out) == ["근린공원", "어린이박물관"]
     assert len(seen) == 7 * 3                                   # 7 centers x 3 content types
     assert {r.url.params["radius"] for r in seen} == {"20000"}
-    assert all(place._norm_place(p, "tourapi", (37.5, 127.0)) for p in out)
+    assert all(candidates._norm_place(p, "tourapi", (37.5, 127.0)) for p in out)
 
 
 def test_keyword_search_nearby_applies_allowlist_nationwide_does_not():
@@ -139,7 +140,7 @@ def test_category_table_covers_the_allowlist():
 
 
 def test_missing_key_is_reported(monkeypatch):
-    monkeypatch.setattr("backend.apis.tourapi.load_env", lambda: None)
+    monkeypatch.setattr("backend.integrations.tourapi.load_env", lambda: None)
     monkeypatch.delenv("PUBLIC_DATA_DECODED_KEY", raising=False)
     with pytest.raises(RuntimeError):
         TourClient()

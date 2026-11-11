@@ -24,10 +24,10 @@ from typing import Annotated, Any, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from ..constants import FAIL, NO_REVIEW
+from ..core.constants import FAIL, NO_REVIEW
 from ..retriever import Document, VectorStore, split_sentences
 from ..tools import Providers, call_api, guarded
-from .place import _norm, place_key
+from .candidates import _norm, place_key
 
 HIGH = 0.55          # cosine similarity for 높음
 MID = 0.40           # cosine similarity for 보통 (and the minimum for evidence)

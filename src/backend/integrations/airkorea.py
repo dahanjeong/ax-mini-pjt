@@ -17,13 +17,13 @@ import os
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Callable, Optional
 
 import httpx
 
-from ..agents.place import haversine_km
-from ..config import load_env
+from ..core.geo import haversine_km
+from ..core.config import load_env
 
 BASE_URL = "https://apis.data.go.kr/B552584/ArpltnInforInqireSvc"
 TIMEOUT_S = 5.0

@@ -7,9 +7,9 @@ import pytest
 
 from backend.agent import Deps, build_graph, recommendation_turn
 from backend.agents import preference
-from backend.agents.place import place_key
-from backend.cards import build_card
-from backend.pipeline import NOTICE_NO_MATCH, recommend
+from backend.agents.candidates import place_key
+from backend.supervisor.cards import build_card
+from backend.supervisor.pipeline import NOTICE_NO_MATCH, recommend
 from backend.retriever import Document, VectorStore, cosine, split_sentences
 from backend.tests.test_recommendation import DATE, DEP, make_providers, tp
 

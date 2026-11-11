@@ -25,11 +25,12 @@ from typing import Annotated, Any, Callable, Optional, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
-from .agents import environment, place, preference, review
-from .agents.place import place_key
-from .constants import FACILITY_KEYS, SUIT_RANK
+from ..agents import environment, place, preference, review
+from ..agents import candidates
+from ..agents.candidates import place_key
+from ..core.constants import FACILITY_KEYS, SUIT_RANK
 from .intent import SCOPE_ENVIRONMENT, SCOPE_FULL
-from .tools import Providers
+from ..tools import Providers
 
 TOP_N = 5
 MAX_PER_KIND = 2
@@ -80,7 +81,7 @@ def rank_places(places: list[dict]) -> list[dict]:
         outdoor_bad = p["indoor_outdoor"] == "outdoor" and p["is_bad_day"]
         match = p.get("preference_match")
         pref = preference.LEVEL_RANK[match["level"]] if match else 0
-        return (outdoor_bad, pref, place.outing_grade(p), SUIT_RANK[p["age_suitability"]],
+        return (outdoor_bad, pref, candidates.outing_grade(p), SUIT_RANK[p["age_suitability"]],
                 -p["facility_count"], p["distance_km"])
 
     return sorted(places, key=key)
@@ -91,7 +92,7 @@ def pick_varied(ranked: list[dict], n: int = TOP_N, per_kind: int = MAX_PER_KIND
     when there are not enough other kinds, the skipped ones fill the remaining slots after them."""
     chosen, skipped, count = [], [], {}
     for i, p in enumerate(ranked):
-        k = place.kind_of(p)
+        k = candidates.kind_of(p)
         if count.get(k, 0) < per_kind:
             chosen.append(i)
             count[k] = count.get(k, 0) + 1

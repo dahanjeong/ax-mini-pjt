@@ -9,8 +9,8 @@
 
 응답 구조는 현재 코드의 출력 그대로다.
 - 되묻기: [src/backend/agent.py](../src/backend/agent.py) `chat_turn`
-- 추천: [src/backend/agent.py](../src/backend/agent.py) `recommendation_turn`, `recommend`
-- 결과 카드: [src/backend/cards.py](../src/backend/cards.py) `build_card`
+- 추천: [src/backend/agent.py](../src/backend/agent.py) `recommendation_turn`, [src/backend/supervisor/pipeline.py](../src/backend/supervisor/pipeline.py) `recommend`
+- 결과 카드: [src/backend/supervisor/cards.py](../src/backend/supervisor/cards.py) `build_card`
 
 ---
 

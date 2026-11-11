@@ -19,8 +19,8 @@ from typing import Any, Optional
 
 import httpx
 
-from ..agents.place import haversine_km
-from ..config import load_env
+from ..core.geo import haversine_km
+from ..core.config import load_env
 
 BASE_URL = "https://dapi.kakao.com"
 TIMEOUT_S = 5.0

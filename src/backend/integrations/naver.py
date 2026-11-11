@@ -18,7 +18,7 @@ from typing import Optional
 
 import httpx
 
-from ..config import load_env
+from ..core.config import load_env
 
 BASE_URL = "https://naverapihub.apigw.ntruss.com"
 TIMEOUT_S = 5.0

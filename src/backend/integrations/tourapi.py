@@ -22,12 +22,12 @@ import math
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Optional
 
 import httpx
 
-from ..agents.place import haversine_km
-from ..config import load_env
+from ..core.geo import haversine_km
+from ..core.config import load_env
 
 BASE_URL = "https://apis.data.go.kr/B551011"
 TIMEOUT_S = 5.0

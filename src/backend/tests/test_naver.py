@@ -2,7 +2,7 @@
 import httpx
 import pytest
 
-from backend.apis.naver import BASE_URL, MAX_REVIEWS, NaverClient, clean, mentions, name_keys
+from backend.integrations.naver import BASE_URL, MAX_REVIEWS, NaverClient, clean, mentions, name_keys
 
 
 def item(title, desc, link, date="20260801"):
@@ -71,7 +71,7 @@ def test_auth_error_raises():
 
 
 def test_missing_keys_are_reported(monkeypatch):
-    monkeypatch.setattr("backend.apis.naver.load_env", lambda: None)
+    monkeypatch.setattr("backend.integrations.naver.load_env", lambda: None)
     monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
     monkeypatch.delenv("NAVER_CLIENT_KEY", raising=False)
     with pytest.raises(RuntimeError):

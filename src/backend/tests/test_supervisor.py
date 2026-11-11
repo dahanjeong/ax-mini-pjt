@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from backend.agent import Deps, build_graph, recommendation_turn
-from backend.intent import (
+from backend.supervisor.intent import (
     SCOPE_ENVIRONMENT, SCOPE_FULL, SCOPE_RERANK, classify_message, parse_preference,
     parse_reference, plan_scope,
 )

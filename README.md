@@ -33,10 +33,9 @@
 > 개발 과정 상세 기록은 [docs/](docs/)에 정리한다.
 
 ## 핵심 코드 위치
-- [src/backend/agent.py:161](src/backend/agent.py#L161) — 메인 에이전트 그래프 (Supervisor, `build_graph`)
-- [src/backend/intent.py](src/backend/intent.py) — 입력 추출 · 의도 판정 · 재실행 범위 결정
-- [src/backend/pipeline.py:118](src/backend/pipeline.py#L118) — 일임 파이프라인 (서브에이전트 실행 · 순위, `build_pipeline`)
-- [src/backend/agents/](src/backend/agents/) — 서브에이전트 (장소 탐색 · 환경 · 후기·적합도)
-- [src/backend/tools.py](src/backend/tools.py) — 도메인 도구 (외부 API 호출 · 타임아웃)
-- [src/backend/cards.py](src/backend/cards.py) — LLM 출력 검증 · 결과 카드 생성
+- [src/backend/agent.py:194](src/backend/agent.py#L194) — 메인 에이전트 그래프 (Supervisor, `build_graph`)
+- [src/backend/tools.py](src/backend/tools.py) — 도메인 도구 (Providers 계약 · 타임아웃 · 실패 기록), 실제 구현은 [src/backend/integrations/](src/backend/integrations/)
 - [src/backend/retriever.py](src/backend/retriever.py) · [src/backend/agents/preference.py](src/backend/agents/preference.py) — RAG 파이프라인 (장소 프로필 임베딩 · 취향 매칭)
+- [src/backend/supervisor/pipeline.py:165](src/backend/supervisor/pipeline.py#L165) — 일임 파이프라인 (서브에이전트 실행 · 순위, `build_pipeline`)
+- [src/backend/agents/](src/backend/agents/) — 서브에이전트 (장소 탐색 · 환경 · 후기·적합도 · 취향 매칭)
+- [src/backend/prompts/](src/backend/prompts/) — LLM 프롬프트 · 답 스키마 · 답 검증

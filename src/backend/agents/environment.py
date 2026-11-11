@@ -11,7 +11,7 @@ from typing import Annotated, Any, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from ..constants import FAIL, NO_DUST
+from ..core.constants import FAIL, NO_DUST
 from ..tools import Providers, guarded
 
 BAD_GRADES = {"나쁨", "매우나쁨", "매우 나쁨", "높음"}   # 높음: weekly PM2.5 forecast

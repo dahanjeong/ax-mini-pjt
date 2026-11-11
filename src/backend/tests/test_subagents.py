@@ -1,8 +1,8 @@
 """Sub-graphs run on their own: place search, environment, reviews & suitability."""
 import time
 
-from backend.agents import environment, place, review
-from backend.constants import FAIL, NO_DUST
+from backend.agents import candidates, environment, place, review
+from backend.core.constants import FAIL, NO_DUST
 from backend.tests.test_recommendation import DATE, DEP, FAC_ALL, GOOD_D, GOOD_W, kk, make_providers, tp
 
 
@@ -124,16 +124,16 @@ def cand(name, km, cat="", types=("tourapi:12",), image=False):
 
 
 def test_kind_tier():
-    assert place.kind_tier(cand("서울대공원", 10, "A02020600")) == 1             # 테마공원 (TourAPI code)
-    assert place.kind_tier(cand("국립과천과학관", 20, "A02060300")) == 1          # 과학관 by name
-    assert place.kind_tier(cand("키즈랜드", 1, "음식점 > 카페 > 테마카페 > 키즈카페", ("kakao:KIDS",))) == 3  # everyday
-    assert place.kind_tier(cand("어린이박물관", 3, "A02060100")) == 1             # 어린이 in name
-    assert place.kind_tier(cand("국립중앙박물관", 8, "A02060100")) == 2
-    assert place.kind_tier(cand("올림픽공원", 9, "여행 > 공원")) == 2
-    assert place.kind_tier(cand("역삼까치공원", 0.3, "여행 > 공원 > 도시근린공원")) == 3   # small park
-    assert place.kind_tier(cand("까치어린이공원", 0.5, "여행 > 공원")) == 3               # not tier 1
-    assert place.kind_tier(cand("유나갤러리", 0.2, "문화,예술 > 문화시설 > 미술관")) == 3
-    assert place.kind_tier(cand("동네도서관", 2, "A02060900")) == 3
+    assert candidates.kind_tier(cand("서울대공원", 10, "A02020600")) == 1             # 테마공원 (TourAPI code)
+    assert candidates.kind_tier(cand("국립과천과학관", 20, "A02060300")) == 1          # 과학관 by name
+    assert candidates.kind_tier(cand("키즈랜드", 1, "음식점 > 카페 > 테마카페 > 키즈카페", ("kakao:KIDS",))) == 3  # everyday
+    assert candidates.kind_tier(cand("어린이박물관", 3, "A02060100")) == 1             # 어린이 in name
+    assert candidates.kind_tier(cand("국립중앙박물관", 8, "A02060100")) == 2
+    assert candidates.kind_tier(cand("올림픽공원", 9, "여행 > 공원")) == 2
+    assert candidates.kind_tier(cand("역삼까치공원", 0.3, "여행 > 공원 > 도시근린공원")) == 3   # small park
+    assert candidates.kind_tier(cand("까치어린이공원", 0.5, "여행 > 공원")) == 3               # not tier 1
+    assert candidates.kind_tier(cand("유나갤러리", 0.2, "문화,예술 > 문화시설 > 미술관")) == 3
+    assert candidates.kind_tier(cand("동네도서관", 2, "A02060900")) == 3
 
 
 def test_preselect_spreads_bands_and_prefers_better_kinds():
@@ -141,7 +141,7 @@ def test_preselect_spreads_bands_and_prefers_better_kinds():
     near += [cand("과학관", 4.0, "A02060300")]
     mid = [cand(f"공원{i}", 6 + i, "A02020700") for i in range(8)] + [cand("수목원", 19, "A01010700")]
     far = [cand(f"도서관{i}", 21 + i, "A02060900") for i in range(3)] + [cand("테마파크", 40, "A02020600")]
-    picked = place.preselect(near + mid + far, radius=46.2, n=15)
+    picked = candidates.preselect(near + mid + far, radius=46.2, n=15)
     names = [p["name"] for p in picked]
     assert len(picked) == 15 and [p["distance_km"] for p in picked] == sorted(p["distance_km"] for p in picked)
     assert {"과학관", "수목원", "테마파크"} <= set(names)                  # tier 1 wins inside each band
@@ -152,9 +152,9 @@ def test_preselect_spreads_bands_and_prefers_better_kinds():
 
 def test_preselect_small_radius_and_image_tiebreak():
     ps = [cand("A", 1, "A02020700"), cand("B", 2, "A02020700", image=True), cand("C", 7, "A02020700")]
-    picked = place.preselect(ps, radius=8, n=2)                          # bands 0-5, 5-8
+    picked = candidates.preselect(ps, radius=8, n=2)                          # bands 0-5, 5-8
     assert [p["name"] for p in picked] == ["B", "C"]                      # B: same tier, has an image
-    assert place.preselect([], radius=30) == []
+    assert candidates.preselect([], radius=30) == []
 
 
 # ---------------------------------------------------------------- one facility, many entries
@@ -164,17 +164,17 @@ def ent(name, lat, src="kakao", km=5.0):
 
 
 def test_same_facility():
-    assert place.same_facility(ent("서울대공원", 37.43), ent("서울대공원 제1아프리카관", 37.432))
-    assert place.same_facility(ent("서울어린이대공원 동물원", 37.55), ent("서울어린이대공원 놀이동산", 37.551))
-    assert not place.same_facility(ent("어린이대공원", 37.55), ent("어린이도서관", 37.55))      # shared 3 chars
-    assert not place.same_facility(ent("서울대공원", 37.43), ent("서울대공원 주차장", 37.46))    # 3 km apart
-    assert not place.same_facility(ent("국립중앙박물관", 37.52), ent("국립국악원", 37.52))       # "국립" is not a word
+    assert candidates.same_facility(ent("서울대공원", 37.43), ent("서울대공원 제1아프리카관", 37.432))
+    assert candidates.same_facility(ent("서울어린이대공원 동물원", 37.55), ent("서울어린이대공원 놀이동산", 37.551))
+    assert not candidates.same_facility(ent("어린이대공원", 37.55), ent("어린이도서관", 37.55))      # shared 3 chars
+    assert not candidates.same_facility(ent("서울대공원", 37.43), ent("서울대공원 주차장", 37.46))    # 3 km apart
+    assert not candidates.same_facility(ent("국립중앙박물관", 37.52), ent("국립국악원", 37.52))       # "국립" is not a word
 
 
 def test_group_facilities_prefers_the_plain_facility_entry():
     ps = [ent("서울대공원 어린이동물원", 37.430, km=7.8), ent("서울대공원 제1아프리카관", 37.431, km=7.9),
           ent("서울대공원", 37.4305, src="tourapi", km=8.0), ent("과천과학관", 37.44, km=9.0)]
-    out = place.group_facilities(ps)
+    out = candidates.group_facilities(ps)
     assert [g["name"] for g in out] == ["서울대공원", "과천과학관"]
     assert sorted(out[0]["includes"]) == ["서울대공원 어린이동물원", "서울대공원 제1아프리카관"]
     assert out[1]["includes"] == []
@@ -183,7 +183,7 @@ def test_group_facilities_prefers_the_plain_facility_entry():
 # ---------------------------------------------------------------- family-outing ranking
 
 def test_outing_grade_and_kind():
-    g = place.outing_grade
+    g = candidates.outing_grade
     assert g(cand("서울어린이대공원 동물원", 7, "여행 > 관광,명소 > 동물원")) == "A"
     assert g(cand("파주 율곡습지공원", 40, "A02020700")) == "A"
     assert g(cand("관광농원", 30, "A02030100")) == "A"                     # 농.산.어촌 체험
@@ -192,7 +192,7 @@ def test_outing_grade_and_kind():
     assert g(cand("헬로방방", 1, "음식점 > 카페 > 테마카페 > 키즈카페", ("kakao:KIDS",))) == "C"
     assert g(cand("동네도서관", 2, "A02060900")) == "C"
     assert g(cand("역삼까치공원", 0.3, "여행 > 공원 > 도시근린공원")) == "C"
-    k = place.kind_of
+    k = candidates.kind_of
     assert k(cand("서울어린이대공원 동물원", 7, "여행 > 관광,명소 > 동물원")) == "zoo"
     assert k(cand("헬로방방", 1, "", ("kakao:KIDS",))) == "kids"
     assert k(cand("국립과천과학관", 20, "A02060300")) == "museum"
@@ -205,7 +205,7 @@ def ranked_place(name, km, cat="", suit="적합", fac=0, io="indoor", bad=False,
 
 
 def test_rank_places_family_outing_order():
-    from backend.pipeline import rank_places
+    from backend.supervisor.pipeline import rank_places
     ps = [ranked_place("키즈카페", 0.9, "음식점 > 카페 > 테마카페 > 키즈카페", fac=3, types=("kakao:KIDS",)),
           ranked_place("박물관", 8, "A02060100", fac=3),
           ranked_place("동물원(보통)", 20, "여행 > 관광,명소 > 동물원", suit="보통"),
@@ -223,7 +223,7 @@ def test_rank_places_family_outing_order():
 
 
 def test_pick_varied_caps_each_kind_at_two():
-    from backend.pipeline import pick_varied
+    from backend.supervisor.pipeline import pick_varied
     kids = [ranked_place(f"키즈{i}", i, types=("kakao:KIDS",)) for i in range(4)]
     zoo = [ranked_place("동물원", 9, "동물원")]
     museum = [ranked_place("박물관", 10, "A02060100")]
@@ -235,7 +235,7 @@ def test_pick_varied_caps_each_kind_at_two():
 def test_group_facilities_without_plain_entry_shows_the_shared_name():
     ps = [ent("서울대공원 산림욕장", 37.430, src="tourapi", km=7.9),
           ent("서울대공원 어린이동물원", 37.431, km=7.8)]
-    (g,) = place.group_facilities(ps)
+    (g,) = candidates.group_facilities(ps)
     assert g["name"] == "서울대공원"
     assert g["includes"] == ["서울대공원 어린이동물원", "서울대공원 산림욕장"]
     assert g["lat"] == 37.431          # location / ids of the best outing part (the children's zoo)
@@ -245,4 +245,4 @@ def test_group_facilities_chains_members():
     # b is within 1 km of a and of c, while a and c are 1.6 km apart: one facility
     ps = [ent("올림픽공원 장미광장", 37.520, km=1), ent("올림픽공원 평화의문", 37.527, km=2),
           ent("올림픽공원 몽촌토성", 37.5345, km=3)]
-    assert len(place.group_facilities(ps)) == 1
+    assert len(candidates.group_facilities(ps)) == 1

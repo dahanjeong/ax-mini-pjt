@@ -4,7 +4,7 @@ from datetime import datetime
 import httpx
 import pytest
 
-from backend.apis.kma import (
+from backend.integrations.kma import (
     BASE_URL, KMAClient, KMAError, latlng_to_grid, mid_base, nearest_mid_city, short_base,
 )
 
@@ -111,7 +111,7 @@ def test_responses_are_cached():
 
 
 def test_missing_key_is_reported(monkeypatch):
-    monkeypatch.setattr("backend.apis.kma.load_env", lambda: None)
+    monkeypatch.setattr("backend.integrations.kma.load_env", lambda: None)
     monkeypatch.delenv("PUBLIC_DATA_DECODED_KEY", raising=False)
     with pytest.raises(RuntimeError):
         KMAClient()

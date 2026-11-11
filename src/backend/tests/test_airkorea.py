@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from backend.agents.environment import evaluate_bad_day
-from backend.apis.airkorea import (
+from backend.integrations.airkorea import (
     BASE_URL, AirKoreaClient, AirKoreaError, forecast_region, nearest_region, parse_grades,
 )
 
@@ -101,7 +101,7 @@ def test_errors_raise_and_missing_key(monkeypatch):
     a = AirKoreaClient(service_key="k", http=http, today=lambda: TODAY)
     with pytest.raises(AirKoreaError):
         a.dust(37.5, 127.0, "2026-11-12")
-    monkeypatch.setattr("backend.apis.airkorea.load_env", lambda: None)
+    monkeypatch.setattr("backend.integrations.airkorea.load_env", lambda: None)
     monkeypatch.delenv("PUBLIC_DATA_DECODED_KEY", raising=False)
     with pytest.raises(RuntimeError):
         AirKoreaClient()

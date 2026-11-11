@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from backend import tools
-from backend.bedrock import (
+from backend.integrations.bedrock import (
     EXTRACT_TOOL, JUDGE_TOOL, SETTING_TOOL, BedrockEmbedder, BedrockLLM, LLMRefusal,
     normalize_extraction,
 )
-from backend.config import (
+from backend.core.config import (
     DEFAULT_BEDROCK_REGION, DEFAULT_CLASSIFY_MODELS, DEFAULT_EXTRACT_MODELS, DEFAULT_JUDGE_MODELS,
     BedrockSettings, bedrock_settings,
 )
@@ -37,7 +37,7 @@ def llm(tool_input, **kw):
 
 
 def test_default_model_chains(monkeypatch):
-    monkeypatch.setattr("backend.config.load_env", lambda: None)     # ignore the local .env
+    monkeypatch.setattr("backend.core.config.load_env", lambda: None)     # ignore the local .env
     for k in ("BEDROCK_REGION", "BEDROCK_JUDGE_MODELS", "BEDROCK_EXTRACT_MODELS", "BEDROCK_CLASSIFY_MODELS"):
         monkeypatch.delenv(k, raising=False)
     s = bedrock_settings()
@@ -52,7 +52,7 @@ def test_default_model_chains(monkeypatch):
 
 
 def test_model_chain_from_env(monkeypatch):
-    monkeypatch.setattr("backend.config.load_env", lambda: None)
+    monkeypatch.setattr("backend.core.config.load_env", lambda: None)
     monkeypatch.setenv("BEDROCK_REGION", "us-east-1")
     monkeypatch.setenv("BEDROCK_JUDGE_MODELS", " us-west-2/us.anthropic.claude-sonnet-4-6 , global.x-v1:0 ,")
     assert bedrock_settings().judge_models == (("us-west-2", "us.anthropic.claude-sonnet-4-6"),
@@ -168,7 +168,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from backend import bedrock
+from backend.integrations import bedrock
 
 
 class SlowMessages:

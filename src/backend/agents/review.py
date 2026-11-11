@@ -5,7 +5,7 @@ judgement and 3-line summary -> indoor/outdoor classification.
                                      +-> END                   (category rule decided)
 
 Review text is untrusted: it only goes into the LLM judge as data, and the judge
-output is accepted solely in the fixed shape (see cards.parse_llm_judgement).
+output is accepted solely in the fixed shape (see prompts.judge.parse_llm_judgement).
 The LLM is called as a tool inside fixed steps; it never decides the flow.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from ..constants import FAIL, NO_REVIEW, SUIT_RANK
+from ..core.constants import FAIL, NO_REVIEW, SUIT_RANK
 from ..tools import Providers, guarded
 
 MAX_REVIEWS = 10

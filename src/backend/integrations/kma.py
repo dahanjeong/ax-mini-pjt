@@ -23,8 +23,8 @@ from typing import Any, Callable, Optional
 
 import httpx
 
-from ..agents.place import haversine_km
-from ..config import load_env
+from ..core.geo import haversine_km
+from ..core.config import load_env
 
 BASE_URL = "https://apis.data.go.kr/1360000"
 TIMEOUT_S = 5.0
