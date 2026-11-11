@@ -433,20 +433,32 @@ def _count(fac: dict) -> int:
     return sum(1 for k in FACILITY_KEYS if fac.get(k, {}).get("status") == "있음")
 
 
-def evaluate_place(prov: Providers, p: dict, age: int, date_str: str) -> dict:
-    """Run the place-facility, environment and review agents for one place and merge."""
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        f_pub = ex.submit(place.fetch_public_facilities, prov, p)
-        f_env = ex.submit(environment.assess_environment, prov, p, date_str)
-        f_rev = ex.submit(review.assess_reviews, prov, p, age)
-        pub, env, rev = f_pub.result(), f_env.result(), f_rev.result()
+@dataclass
+class SubAgents:
+    """Compiled sub-graphs, bound to one set of providers."""
+    place: Any
+    environment: Any
+    review: Any
 
-    out = dict(p)
+    @classmethod
+    def build(cls, prov: Providers) -> "SubAgents":
+        return cls(place.build_graph(prov), environment.build_graph(prov), review.build_graph(prov))
+
+
+def evaluate_place(sub: SubAgents, p: dict, age: int, date_str: str) -> dict:
+    """Delegate one candidate to the environment and review agents (in parallel) and merge
+    with the place agent's public facility lookup."""
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_env = ex.submit(environment.run, sub.environment, place=p, date=date_str)
+        f_rev = ex.submit(review.run, sub.review, place=p, age_months=age)
+        env, rev = f_env.result(), f_rev.result()
+
+    out = {k: v for k, v in p.items() if k not in ("public_facilities", "public_failed_sources")}
     for k in ("review_evidence_count", "review_insufficient", "age_suitability",
               "review_summary", "indoor_outdoor"):
         out[k] = rev[k]
     fac = place.resolve_facilities(
-        pub["public_facilities"], rev["facility_mentions"], mentions_failed=rev["mentions_failed"]
+        p.get("public_facilities"), rev["facility_mentions"], mentions_failed=rev["mentions_failed"]
     )
     out["facilities"] = fac
     out["facility_count"] = _count(fac)
@@ -454,7 +466,9 @@ def evaluate_place(prov: Providers, p: dict, age: int, date_str: str) -> dict:
     out["dust"] = env["dust"]
     out["is_bad_day"] = env["is_bad_day"]
     out["warnings"] = env["bad_day_warnings"] if rev["indoor_outdoor"] == "outdoor" else []
-    out["failed_sources"] = sorted(set(pub["failed_sources"] + env["failed_sources"] + rev["failed_sources"]))
+    out["failed_sources"] = sorted(set(
+        list(p.get("public_failed_sources") or []) + env["failed_sources"] + rev["failed_sources"]
+    ))
     return out
 
 
@@ -466,16 +480,17 @@ def rank_places(places: list[dict]) -> list[dict]:
     return sorted(places, key=key)
 
 
-def _run(prov, dep, age, date_str, radius, failed) -> list[dict]:
-    found = place.collect_candidates(prov, dep, radius)
+def _run(sub: SubAgents, dep: dict, age: int, nap: bool, date_str: str, scale: float,
+         failed: list) -> tuple[dict, list[dict]]:
+    found = place.run(sub.place, departure=dep, age_months=age, travels_during_nap=nap, radius_scale=scale)
     failed.extend(found["failed_sources"])
     cands = found["candidates"]
     if not cands:
-        return []
+        return found, []
     with ThreadPoolExecutor(max_workers=len(cands)) as ex:
-        evaluated = list(ex.map(lambda p: evaluate_place(prov, p, age, date_str), cands))
+        evaluated = list(ex.map(lambda p: evaluate_place(sub, p, age, date_str), cands))
     kept = [p for p in evaluated if p["age_suitability"] != "부적합"]
-    return rank_places(kept)[:TOP_N]
+    return found, rank_places(kept)[:TOP_N]
 
 
 def recommend(
@@ -489,25 +504,23 @@ def recommend(
 ) -> dict:
     say = progress or (lambda m: None)
     t0 = time.monotonic()
-    dep = (departure["lat"], departure["lng"])
-    hours = place.max_drive_hours(age_months, bool(travels_during_nap))
-    radius = place.radius_km_for(hours)
+    sub = SubAgents.build(prov)
+    nap = bool(travels_during_nap)
     expanded = False
     failed: list[str] = []
     say("주변 장소를 찾고 있어요...")
-    results = _run(prov, dep, age_months, outing_date, radius, failed)
+    found, results = _run(sub, departure, age_months, nap, outing_date, 1.0, failed)
     if len(results) < TOP_N:
         expanded = True
-        radius = radius * place.WIDEN_FACTOR
         say("후보가 부족해 검색 반경을 1.5배로 넓혀 다시 찾고 있어요...")
-        results = _run(prov, dep, age_months, outing_date, radius, failed)
+        found, results = _run(sub, departure, age_months, nap, outing_date, place.WIDEN_FACTOR, failed)
     notice = None
     if len(results) < TOP_N:
         notice = f"조건에 맞는 장소가 {len(results)}곳뿐이에요. 찾은 장소만 보여드릴게요."
     say("날씨·편의시설·후기를 확인해 순위를 정했어요.")
     return {
-        "max_drive_hours": hours,
-        "radius_km": radius,
+        "max_drive_hours": found["max_drive_hours"],
+        "radius_km": found["radius_km"],
         "radius_expanded": expanded,
         "result_cards": results,
         "notice": notice,

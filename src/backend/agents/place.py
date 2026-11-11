@@ -1,10 +1,19 @@
-"""Place search: drive radius, candidate collection/merge, public facility lookup."""
+"""Place search sub-graph: drive radius -> candidate collection/merge -> public
+facility lookup per candidate (fanned out with Send) -> attach.
+
+    START -> radius -> collect -+-> facilities (x N, parallel) -> attach -> END
+                                +-> attach (no candidates)
+"""
 from __future__ import annotations
 
 import math
+import operator
 import re
 from difflib import SequenceMatcher
-from typing import Optional
+from typing import Annotated, Any, Optional, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
 
 from ..constants import FACILITY_KEYS, FAIL, UNKNOWN
 from ..tools import Providers, call_api, guarded
@@ -106,13 +115,6 @@ def collect_candidates(prov: Providers, dep: tuple[float, float], radius: float)
     return {"candidates": merged[:PRESELECT_N], "failed_sources": failed}
 
 
-def fetch_public_facilities(prov: Providers, p: dict) -> dict:
-    """Public-data facility info; `public_facilities` is None when the call failed."""
-    failed: list[str] = []
-    raw = guarded(failed, "public_data", prov.facilities, p)
-    return {"public_facilities": raw, "failed_sources": failed}
-
-
 def resolve_facilities(public: Optional[dict], mentions: dict, *, mentions_failed: bool) -> dict:
     """Public data first, then NAVER review mentions, else 정보 없음.
 
@@ -132,3 +134,75 @@ def resolve_facilities(public: Optional[dict], mentions: dict, *, mentions_faile
         else:
             fac[k] = {"status": UNKNOWN, "source": None}
     return fac
+
+
+# ---------------------------------------------------------------- sub-graph
+
+class PlaceState(TypedDict, total=False):
+    # input
+    departure: dict                 # {"lat", "lng"}
+    age_months: int
+    travels_during_nap: bool
+    radius_scale: float             # 1.0, or WIDEN_FACTOR when the supervisor widens the search
+    # output
+    max_drive_hours: float
+    radius_km: float
+    candidates: list[dict]          # each with "public_facilities" (None = failed) and "public_failed_sources"
+    failed_sources: Annotated[list[str], operator.add]   # candidate-collection failures
+    # internal (fan-out results)
+    facility_results: Annotated[list[tuple], operator.add]
+
+
+def build_graph(prov: Providers):
+    def radius(state: PlaceState) -> dict:
+        hours = max_drive_hours(state["age_months"], bool(state.get("travels_during_nap")))
+        return {"max_drive_hours": hours, "radius_km": radius_km_for(hours) * state.get("radius_scale", 1.0)}
+
+    def collect(state: PlaceState) -> dict:
+        dep = (state["departure"]["lat"], state["departure"]["lng"])
+        return collect_candidates(prov, dep, state["radius_km"])
+
+    def fan_out(state: PlaceState):
+        cands = state.get("candidates") or []
+        if not cands:
+            return "attach"
+        return [Send("facilities", {"index": i, "place": p}) for i, p in enumerate(cands)]
+
+    def facilities(item: dict) -> dict:
+        failed: list[str] = []
+        raw = guarded(failed, "public_data", prov.facilities, item["place"])
+        return {"facility_results": [(item["index"], raw, failed)]}
+
+    def attach(state: PlaceState) -> dict:
+        by_index = {i: (raw, failed) for i, raw, failed in state.get("facility_results") or []}
+        cands = []
+        for i, p in enumerate(state.get("candidates") or []):
+            raw, failed = by_index.get(i, (None, ["public_data"]))
+            cands.append({**p, "public_facilities": raw, "public_failed_sources": failed})
+        return {"candidates": cands}
+
+    g = StateGraph(PlaceState)
+    g.add_node("radius", radius)
+    g.add_node("collect", collect)
+    g.add_node("facilities", facilities)
+    g.add_node("attach", attach)
+    g.add_edge(START, "radius")
+    g.add_edge("radius", "collect")
+    g.add_conditional_edges("collect", fan_out, ["facilities", "attach"])
+    g.add_edge("facilities", "attach")
+    g.add_edge("attach", END)
+    return g.compile()
+
+
+def run(graph: Any, *, departure: dict, age_months: int, travels_during_nap: bool,
+        radius_scale: float = 1.0) -> dict:
+    s = graph.invoke({
+        "departure": departure, "age_months": age_months,
+        "travels_during_nap": bool(travels_during_nap), "radius_scale": radius_scale,
+    })
+    return {
+        "max_drive_hours": s["max_drive_hours"],
+        "radius_km": s["radius_km"],
+        "candidates": s.get("candidates") or [],
+        "failed_sources": list(s.get("failed_sources") or []),
+    }

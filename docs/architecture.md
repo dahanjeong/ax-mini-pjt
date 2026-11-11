@@ -28,6 +28,22 @@
 - **서브그래프는 정해진 순서로 실행되는 LangGraph 서브그래프다.** LLM이 흐름을 결정하지 않는다. 후기·적합도 서브그래프는 판정·요약 단계에서만 LLM을 도구로 부르며, 출력은 고정 JSON으로 검증한다.
 - **외부 글(블로그·카페)은 후기·적합도 서브그래프 안에서만 다룬다.** Supervisor에는 검증된 판정 결과만 넘어간다.
 
+## 서브그래프 흐름
+
+각 서브그래프는 `build_graph(prov)`로 Providers를 묶어 컴파일하고, `run(graph, ...)`으로 실행한다. Providers는 그래프 상태에 넣지 않는다.
+
+```
+장소 탐색   START → radius → collect ─┬→ facilities (후보별 Send, 병렬) → attach → END
+                                       └→ attach (후보 없음)
+환경        START ─┬→ weather ─┬→ judge → END
+                    └→ dust ────┘
+후기·적합도 START → fetch_reviews → judge ─┬→ classify_llm → END   (카테고리로 실내/야외 판단 불가)
+                                            └→ END                   (카테고리 규칙으로 결정)
+```
+
+- 실패한 외부 API는 각 서브그래프의 `failed_sources`(누적 리듀서)에 모인다.
+- 편의시설 최종 판정(공공데이터 → 후기 언급 → 정보 없음)은 장소 탐색과 후기 결과가 모두 필요해서 Supervisor가 합칠 때 `place.resolve_facilities`로 한다.
+
 ## Supervisor 의도 판정과 재실행 범위
 
 의도는 규칙으로 판정한다. 이번 메시지에서 추출한 입력을 직전 상태와 비교하고, 장소를 가리키는 표현이 있는지 확인한다.
