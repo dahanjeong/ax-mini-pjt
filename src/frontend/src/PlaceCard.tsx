@@ -1,9 +1,14 @@
-import React from "react";
 import {
   dustText, facilityTone, failedText, includesText, settingLabel, summaryLines, weatherText,
-} from "./format.js";
+} from "./format.ts";
+import type { PlaceCardData } from "./types.ts";
 
-export default function PlaceCard({ card, rank }) {
+interface Props {
+  card: PlaceCardData;
+  rank: number;
+}
+
+export default function PlaceCard({ card, rank }: Props) {
   const summary = summaryLines(card.review_summary);
   const includes = includesText(card.includes);
   const failed = failedText(card.failed_sources);

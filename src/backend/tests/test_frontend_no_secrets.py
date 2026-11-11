@@ -57,8 +57,9 @@ def _scan(files):
 
 
 def test_frontend_source_has_no_secrets_or_external_api_calls():
-    files = _files("src", "index.html", "vite.config.js", "package.json")
+    files = _files("src", "index.html", "vite.config.ts", "tsconfig.json", "package.json")
     assert files
+    assert (FRONTEND / "vite.config.ts").is_file()     # a renamed file must not silently drop out of the scan
     _scan([f for f in files if f.name != "package.json"] + [FRONTEND / "package.json"])
     # frontend must not ship its own .env files
     assert not list(FRONTEND.glob(".env*"))

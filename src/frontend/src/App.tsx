@@ -1,14 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
-import PlaceCard from "./PlaceCard.jsx";
-import { ChatError, checkHealth, sendChat } from "./api.js";
-import { toAssistantMessage } from "./format.js";
+import { useEffect, useRef, useState } from "react";
+import PlaceCard from "./PlaceCard.tsx";
+import { ChatError, checkHealth, sendChat } from "./api.ts";
+import { toAssistantMessage } from "./format.ts";
+import type { ChatMessage } from "./types.ts";
 
 const EXAMPLES = [
   "30개월 아기랑 이번 토요일에 강남역에서 출발해요",
   "18개월, 내일 판교역에서 실내 위주로 가고 싶어요",
   "24개월 아기, 모레 잠실역에서 서울숲 같은 곳",
 ];
-const WELCOME = {
+const WELCOME: ChatMessage = {
   role: "assistant",
   texts: ["안녕하세요! 아기 월령, 출발지, 날짜를 알려주시면 아기와 함께 가기 좋은 곳 5곳을 찾아드려요."],
   cards: [],
@@ -16,12 +17,12 @@ const WELCOME = {
 };
 
 export default function App() {
-  const [messages, setMessages] = useState([WELCOME]);
-  const [sessionId, setSessionId] = useState(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [online, setOnline] = useState(true);
-  const endRef = useRef(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     checkHealth().then(setOnline);
@@ -31,7 +32,7 @@ export default function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
-  async function send(text) {
+  async function send(text: string) {
     const message = text.trim();
     if (!message || pending) return;
     setMessages((m) => [...m, { role: "user", texts: [message] }]);
@@ -113,7 +114,13 @@ export default function App() {
   );
 }
 
-function Message({ message, onChoose, disabled }) {
+interface MessageProps {
+  message: ChatMessage;
+  onChoose: (text: string) => void;
+  disabled: boolean;
+}
+
+function Message({ message, onChoose, disabled }: MessageProps) {
   const { role, texts, notice, cards = [], choices = [] } = message;
   return (
     <div className={`turn ${role}`}>

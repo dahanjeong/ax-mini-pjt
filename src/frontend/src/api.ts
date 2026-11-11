@@ -1,10 +1,12 @@
 // Calls to our own backend only (no external API, no keys in the frontend).
+import type { ChatResponse } from "./types.ts";
+
 export const API = "http://localhost:8000";
 
 export class ChatError extends Error {}
 
-export async function sendChat(message, sessionId) {
-  let res;
+export async function sendChat(message: string, sessionId: string | null): Promise<ChatResponse> {
+  let res: Response;
   try {
     res = await fetch(`${API}/chat`, {
       method: "POST",
@@ -16,10 +18,10 @@ export async function sendChat(message, sessionId) {
   }
   if (res.status === 422) throw new ChatError("메시지는 1~500자로 입력해 주세요.");
   if (!res.ok) throw new ChatError("서버에서 문제가 생겼어요. 잠시 후 다시 시도해 주세요.");
-  return res.json();
+  return (await res.json()) as ChatResponse;
 }
 
-export async function checkHealth() {
+export async function checkHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API}/health`);
     return res.ok;

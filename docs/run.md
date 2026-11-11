@@ -32,7 +32,7 @@ npm run dev
 ```
 브라우저에서 http://localhost:5173 을 연다. 백엔드(포트 8000)가 먼저 떠 있어야 한다.
 
-화면 표시 함수 테스트: `cd src/frontend && npm test` (Node 내장 테스트 러너, 추가 의존성 없음)
+타입 검사: `npm run typecheck` · 빌드: `npm run build` (타입 검사 후 빌드) · 화면 표시 함수 테스트: `npm test` (Node 내장 테스트 러너, 추가 의존성 없음)
 
 ## 채팅 API 호출 예
 백엔드를 띄운 뒤:

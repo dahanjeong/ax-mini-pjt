@@ -6,14 +6,16 @@ mini-pjt/
 │   ├── frontend/                  # React (Vite) 채팅 UI
 │   │   ├── index.html
 │   │   ├── package.json
-│   │   ├── vite.config.js
+│   │   ├── vite.config.ts
+│   │   ├── tsconfig.json          # strict, 타입만 지울 수 있는 문법 (node가 테스트를 바로 실행)
 │   │   └── src/
-│   │       ├── main.jsx           # 진입점
-│   │       ├── App.jsx            # 채팅 화면 (대화 · 세션 · 후보 선택 · 처리 중 표시)
-│   │       ├── PlaceCard.jsx      # 추천 결과 카드
-│   │       ├── api.js             # 백엔드 호출 (/chat, /health — 로컬 백엔드만)
-│   │       ├── format.js          # 표시용 함수 (날씨·대기·편의시설·응답 → 말풍선)
-│   │       ├── format.test.js     # format.js 테스트 (npm test)
+│   │       ├── main.tsx           # 진입점
+│   │       ├── App.tsx            # 채팅 화면 (대화 · 세션 · 후보 선택 · 처리 중 표시)
+│   │       ├── PlaceCard.tsx      # 추천 결과 카드
+│   │       ├── api.ts             # 백엔드 호출 (/chat, /health — 로컬 백엔드만)
+│   │       ├── types.ts           # 백엔드 응답 타입 (api/schemas.py · supervisor/cards.py와 같은 형태)
+│   │       ├── format.ts          # 표시용 함수 (날씨·대기·편의시설·응답 → 말풍선)
+│   │       ├── format.test.ts     # format.ts 테스트 (npm test)
 │   │       └── styles.css
 │   └── backend/             # FastAPI 백엔드
 │       ├── main.py              # FastAPI 진입점
