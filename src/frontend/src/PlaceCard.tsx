@@ -3,8 +3,6 @@ import {
 } from "./format.ts";
 import type { PlaceCardData } from "./types.ts";
 
-const FACILITY_ICONS: Record<string, string> = { nursing_room: "🍼", stroller_rental: "👶", parking: "🚗" };
-
 interface Props {
   card: PlaceCardData;
   rank: number;
@@ -19,41 +17,42 @@ export default function PlaceCard({ card, rank }: Props) {
   return (
     <article className="place-card">
       <header className="place-head">
-        <span className="rank">{rank}</span>
+        <span className="rank num" aria-label={`${rank}위`}>{rank}</span>
         <div className="place-title">
           <h3>{card.name}</h3>
           <p className="meta">
             <span className={`badge suit-${card.age_suitability}`}>월령 {card.age_suitability}</span>
             <span className="badge">{settingLabel(card.indoor_outdoor)}</span>
-            <span>📍 직선거리 {card.distance_km}km</span>
+            <span className="distance">직선거리 <span className="num">{card.distance_km}km</span></span>
           </p>
           {includes && <p className="includes">함께 있는 곳: {includes}</p>}
         </div>
       </header>
 
       {card.warnings.length > 0 && (
-        <p className="warning">⚠ {card.warnings.join(" · ")} 예보가 있어요. 야외 일정은 주의하세요.</p>
+        <p className="warning">{card.warnings.join(", ")} 예보가 있어요. 야외 일정은 주의하세요.</p>
       )}
 
       <ul className="facilities">
         {Object.entries(card.facilities).map(([key, f]) => (
           <li key={key} className={`facility ${facilityTone(f.status)}`}>
-            <span aria-hidden="true">{FACILITY_ICONS[key] ?? "•"}</span> {f.label} <strong>{f.status}</strong>
+            <span className="facility-label">{f.label}</span>
+            <strong>{f.status}</strong>
           </li>
         ))}
       </ul>
 
       <dl className="conditions">
-        <dt>☀️ 날씨</dt>
+        <dt>날씨</dt>
         <dd>{weatherText(card.weather)}</dd>
-        <dt>🍃 대기</dt>
+        <dt>대기</dt>
         <dd>{dustText(card.dust)}</dd>
       </dl>
 
       {match && (
         <div className="match">
           <p>
-            💛 취향 일치 <span className={`badge level-${match.level}`}>{match.level}</span>
+            취향 일치 <span className={`badge level-${match.level}`}>{match.level}</span>
           </p>
           {match.evidence.map((e) => (
             <blockquote key={e.doc_id}>{e.text}</blockquote>
