@@ -25,6 +25,12 @@ class Providers:
     dust: Callable[[float, float, str], dict]     # {pm10_grade, pm25_grade} or {} when no forecast
     llm_judge: Callable[[dict, int, list], dict]  # {age_suitability, summary[3], facility_mentions{}}
     llm_indoor_outdoor: Callable[[dict, list], str]
+    # optional (preference matching); None -> recommend without preference matching
+    # keyword_search(query, lat, lng, radius_km) -> raw places like tour/kakao (+ "source");
+    #   lat/lng/radius None = nationwide (reference-place lookup)
+    keyword_search: Optional[Callable[[str, Optional[float], Optional[float], Optional[float]], list[dict]]] = None
+    # embed(texts) -> one vector per text (Bedrock embeddings)
+    embed: Optional[Callable[[list[str]], list[list[float]]]] = None
 
 
 def call_api(fn: Callable, *args) -> Any:

@@ -61,6 +61,7 @@
 | `outing_date` | string \| null | 확인된 날짜 (YYYY-MM-DD) |
 | `preference_text` | string \| null | 확인된 취향 문장 |
 | `reference_place` | string \| null | "비슷한 곳" 요청의 기준 장소명 |
+| `reference_candidates` | array | 기준 장소 이름이 여러 곳일 때 후보 목록 `[{name, address}]` (번호나 이름으로 고름) |
 
 ### Response 200 — 추천 필드 (`status: "ready"`일 때만)
 
@@ -72,6 +73,7 @@
 | `radius_expanded` | boolean | 후보가 부족해 반경을 1.5배로 넓혔는지 |
 | `failed_sources` | string[] | 실패하거나 시간 초과(5초)된 외부 API |
 | `elapsed_s` | number | 추천에 걸린 시간 (초) |
+| `preference_status` | string | 취향 매칭 상태: `off`(취향 없음) · `ok` · `unavailable`(임베딩 미설정) · `failed`(임베딩 실패, 기본 순위) |
 
 ### 예시 1 — 되묻기
 
@@ -144,6 +146,7 @@
 | `warnings` | string[] | 경고 문구 (나쁜 날의 야외 장소) |
 | `review_summary` | string[] | 후기 3줄 요약 (없으면 `["후기 정보 없음"]`) |
 | `failed_sources` | string[] | 이 장소에서 실패한 외부 API |
+| `preference_match` | object \| null | 취향을 말한 경우 `{level: "높음"\|"보통"\|"낮음", evidence: [{doc_id, text}]}` (근거 문장 최대 2개). 취향이 없으면 `null` |
 
 ### 오류
 

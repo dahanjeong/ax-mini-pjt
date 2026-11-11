@@ -15,7 +15,9 @@ from .constants import FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, SUIT_RANK, UNKNO
 CARD_FIELDS = (
     "name", "distance_km", "indoor_outdoor", "age_suitability", "facilities",
     "weather", "dust", "is_bad_day", "warnings", "review_summary", "failed_sources",
+    "preference_match",
 )
+MATCH_LEVELS = ("높음", "보통", "낮음")
 FACILITY_LABELS = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
 FACILITY_VALUES = ("있음", "없음", UNKNOWN, FAIL)
 SUMMARY_LINES = 3
@@ -89,6 +91,17 @@ def _facility(fac: dict, key: str) -> dict:
     }
 
 
+def _preference_match(m: Any) -> Any:
+    """{level, evidence: [{doc_id, text}]} or None when no preference was given."""
+    if not isinstance(m, dict) or m.get("level") not in MATCH_LEVELS:
+        return None
+    evidence = []
+    for e in m.get("evidence") or []:
+        if isinstance(e, dict) and isinstance(e.get("text"), str) and isinstance(e.get("doc_id"), str):
+            evidence.append({"doc_id": e["doc_id"], "text": e["text"][:MAX_LINE_CHARS]})
+    return {"level": m["level"], "evidence": evidence[:2]}
+
+
 def build_card(place: dict) -> dict:
     fac = place.get("facilities") or {}
     summary = sanitize_summary(place.get("review_summary"))
@@ -108,6 +121,7 @@ def build_card(place: dict) -> dict:
         "warnings": list(place.get("warnings") or []),
         "review_summary": summary,
         "failed_sources": list(place.get("failed_sources") or []),
+        "preference_match": _preference_match(place.get("preference_match")),
     }
 
 

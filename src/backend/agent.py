@@ -6,10 +6,12 @@ Graph (LangGraph, in-memory checkpointer keyed by thread_id):
                                   +-> detail -> END            (stored card)
                                   +-> out_of_scope -> END
                                   +-> check_age -> check_nap -> check_departure -> check_date
-                                        -> plan -> delegate -> END
+                                        -> check_reference -> plan -> delegate -> END
 
 - extract   slots (age, nap, departure, date) + optional preference / reference place
-- check_*   the first missing or invalid required input sets `reply` and ends the turn
+- check_*   the first missing or invalid required input sets `reply` and ends the turn;
+            check_reference resolves the reference place of a "similar place" request
+            (asks back when it is not found or ambiguous)
 - plan      intent + re-run scope by comparing with the inputs of the last search
 - delegate  runs the delegation pipeline (pipeline.py) with the providers passed in
             `config["configurable"]["providers"]`; without providers it stops at
@@ -31,9 +33,12 @@ from langgraph.graph import END, START, StateGraph
 from .intent import (
     _AGE_TOKENS, _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, SCOPE_FULL, _NonNumeric,
     classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference,
-    parse_reference, plan_scope, search_snapshot,
+    parse_reference, plan_scope, preference_keywords, search_snapshot,
 )
-from .pipeline import TOP_N, _count, build_pipeline, rank_places, recommend, run_pipeline  # noqa: F401
+from .agents import preference as preference_agent
+from .pipeline import (  # noqa: F401
+    _STORED_KEYS, TOP_N, _count, build_pipeline, rank_places, recommend, run_pipeline,
+)
 from .tools import Providers
 
 DEFAULT_FORECAST_DAYS = 10
@@ -44,13 +49,17 @@ GeocodeFn = Callable[[str], list[dict]]
 # date_range(today) -> (start, end) covered by the forecast
 DateRangeFn = Callable[[date], tuple[date, date]]
 # optional LLM extractor(message, awaiting) -> partial dict:
-#   age_months, departure_query, date_text, travels_during_nap, preference_text, reference_place
+#   age_months, departure_query, date_text, travels_during_nap,
+#   preference_text, preference_keywords (list), reference_place
 ExtractorFn = Callable[[str, Optional[str]], dict]
 
 _SLOT_KEYS = ("baby_age_months", "travels_during_nap", "outing_date", "departure_query",
-              "departure_location", "preference_text", "reference_place")
+              "departure_location", "preference_text", "preference_keywords", "reference_place")
 _RESULT_KEYS = ("candidates", "evaluations", "result_cards", "max_drive_hours", "radius_km",
-                "radius_expanded", "failed_sources", "elapsed_s", "searched")
+                "radius_expanded", "failed_sources", "elapsed_s", "searched", "matches",
+                "match_query", "keywords_searched", "preference_status", "reference",
+                "reference_candidates", "reference_chosen")
+_CANCEL = re.compile(r"없음|없어요|취소|됐어|괜찮|상관\s*없")
 
 OUT_OF_SCOPE_REPLY = ("저는 아기와 함께 갈 나들이 장소 추천을 도와드려요. "
                       "아기 월령, 출발지, 날짜를 알려주시면 장소를 찾아볼게요.")
@@ -89,9 +98,13 @@ class ChatState(TypedDict, total=False):
     nap_asked: bool
     # optional inputs
     preference_text: Optional[str]
-    reference_place: Optional[str]
+    preference_keywords: Optional[list]
+    reference_place: Optional[str]           # name as the user said it
+    reference: Optional[dict]                # resolved: {"query", "name", "profile": [sentences]}
+    reference_candidates: list               # ambiguous lookup: [{"name", "address", "raw"}]
+    reference_chosen: Optional[dict]         # raw place picked from reference_candidates
     # turn bookkeeping
-    awaiting: Optional[str]  # age | nap | departure | departure_choice | date
+    awaiting: Optional[str]  # age | nap | departure | departure_choice | date | reference | reference_choice
     prev_awaiting: Optional[str]
     has_new_input: bool
     missing_inputs: list
@@ -114,6 +127,10 @@ class ChatState(TypedDict, total=False):
     radius_expanded: bool
     failed_sources: list
     elapsed_s: Optional[float]
+    matches: dict
+    match_query: Optional[list]
+    keywords_searched: list
+    preference_status: Optional[str]
 
 
 _PIPELINES: dict[int, tuple[Providers, Any]] = {}
@@ -155,7 +172,25 @@ def _card_text(i: int, c: dict) -> str:
     if c.get("warnings"):
         lines.append("주의: " + ", ".join(c["warnings"]))
     lines.append("후기 요약: " + " / ".join(c.get("review_summary") or []))
+    m = c.get("preference_match")
+    if m:
+        ev = " / ".join(e["text"] for e in m.get("evidence") or []) or "근거 문장 없음"
+        lines.append(f"취향 일치: {m['level']} (근거: {ev})")
     return "\n".join(lines)
+
+
+def _pick(text: str, cands: list[dict]) -> Optional[dict]:
+    m = re.fullmatch(r"\s*(\d+)\s*(?:번|번째)?\s*", text)
+    if m and 1 <= int(m.group(1)) <= len(cands):
+        return cands[int(m.group(1)) - 1]
+    for c in cands:
+        if c.get("name") and c["name"] in text or (c.get("address") and c["address"] in text):
+            return c
+    return None
+
+
+def _providers(config) -> Optional[Providers]:
+    return ((config or {}).get("configurable") or {}).get("providers")
 
 
 def build_graph(deps: Deps):
@@ -232,16 +267,34 @@ def build_graph(deps: Deps):
             out["outing_date"] = None
             out["notice"] = "날짜를 이해하지 못했어요. 예: 내일, 11월 15일, 2026-11-15"
 
+        # ---- reference place being re-asked
+        if awaiting == "reference":
+            if _CANCEL.search(text):
+                out.update({"reference_place": None, "reference": None, "reference_candidates": []})
+            elif text:
+                out.update({"reference_place": text.strip(" .!?"), "reference": None})
+            return out
+        if awaiting == "reference_choice":
+            chosen = _pick(text, state.get("reference_candidates") or [])
+            if chosen:
+                out.update({"reference_chosen": chosen["raw"], "reference_candidates": []})
+                return out
+            if _CANCEL.search(text):
+                out.update({"reference_place": None, "reference": None, "reference_candidates": []})
+                return out
+
         # ---- preference / reference place (optional; LLM first, rule fallback)
         pref = llm.get("preference_text") if isinstance(llm.get("preference_text"), str) else None
         ref = llm.get("reference_place") if isinstance(llm.get("reference_place"), str) else None
+        kws = llm.get("preference_keywords") if isinstance(llm.get("preference_keywords"), list) else None
         if not llm and awaiting not in ("departure", "departure_choice"):
-            pref = parse_preference(text)
             ref = parse_reference(text)
-        if ref:
-            out["reference_place"] = ref.strip()
+            pref = None if ref else parse_preference(text)
+        if ref and ref.strip() != state.get("reference_place"):
+            out.update({"reference_place": ref.strip(), "reference": None, "reference_chosen": None})
         if pref:
             out["preference_text"] = pref.strip()
+            out["preference_keywords"] = [str(k) for k in kws][:3] if kws else preference_keywords(pref)
 
         # ---- departure
         candidates = state.get("departure_candidates") or []
@@ -398,6 +451,48 @@ def build_graph(deps: Deps):
             }
         return {"available_date_range": rng}
 
+    def check_reference(state: ChatState, config) -> ChatState:
+        name = state.get("reference_place")
+        if not name:
+            return {"reference": None} if state.get("reference") else {}
+        ref = state.get("reference") or {}
+        if ref.get("query") == name and ref.get("profile") is not None:
+            return {}
+        prov = _providers(config)
+        if prov is None:                       # conversation only: nothing to look up
+            return {}
+        chosen = state.get("reference_chosen")
+        if chosen:
+            prof = preference_agent.reference_profile(prov, chosen)
+            return {"reference": {"query": name, "name": prof["name"], "profile": prof["profile"]},
+                    "reference_chosen": None}
+        res = preference_agent.resolve_reference(prov, name)
+        if res["status"] == "ok":
+            return {"reference": {"query": name, "name": res["name"], "profile": res["profile"]}}
+        if res["status"] == "not_found":
+            return {
+                "awaiting": "reference",
+                "reference_place": None,
+                "reference": None,
+                "missing_inputs": ["reference_place"],
+                "notice": f"기준 장소 '{name}'을(를) 찾지 못했어요.",
+                "reply": f"기준 장소 '{name}'을(를) 찾지 못했어요. 정확한 장소 이름을 알려주시거나, "
+                         "기준 장소 없이 추천받으려면 '없음'이라고 해 주세요.",
+            }
+        if res["status"] == "ambiguous":
+            cands = res["candidates"]
+            lines = "\n".join(f"{i}. {c['name']} ({c.get('address', '')})" for i, c in enumerate(cands, 1))
+            return {
+                "awaiting": "reference_choice",
+                "reference_candidates": cands,
+                "missing_inputs": ["reference_place"],
+                "notice": f"'{name}' 검색 결과가 여러 곳이에요.",
+                "reply": f"기준 장소 '{name}' 검색 결과가 여러 곳이에요. 번호나 이름으로 골라 주세요.\n{lines}",
+            }
+        # failed / unavailable: go on without the reference place
+        return {"reference": None, "reference_place": None,
+                "notice": "기준 장소 정보를 불러오지 못해 기준 장소 없이 추천할게요."}
+
     def plan(state: ChatState) -> ChatState:
         current = search_snapshot(state)
         intent, scope = plan_scope(state.get("searched"), current)
@@ -410,28 +505,30 @@ def build_graph(deps: Deps):
             "scope": scope,
             "awaiting": None,
             "missing_inputs": [],
-            "notice": None,
+            "notice": state.get("notice"),
             "reply": reply,
         }
 
     def delegate(state: ChatState, config) -> ChatState:
-        prov = ((config or {}).get("configurable") or {}).get("providers")
+        prov = _providers(config)
         if prov is None:
             return {}
         out = run_pipeline(
             _pipeline_for(prov), scope=state["scope"],
             departure=state["departure_location"], age_months=state["baby_age_months"],
             outing_date=state["outing_date"], travels_during_nap=bool(state.get("travels_during_nap")),
-            stored={k: state.get(k) for k in ("candidates", "evaluations", "max_drive_hours",
-                                               "radius_km", "radius_expanded")},
+            preference_text=state.get("preference_text"), reference=state.get("reference"),
+            keywords=state.get("preference_keywords") or [],
+            stored={k: state.get(k) for k in _STORED_KEYS},
         )
+        notice = " ".join(n for n in (state.get("notice"), out["notice"]) if n) or None
         return {
             "delegated": True,
             "progress": out["messages"],
-            "notice": out["notice"],
+            "notice": notice,
             "searched": search_snapshot(state),
-            **{k: out[k] for k in ("candidates", "evaluations", "result_cards", "max_drive_hours",
-                                   "radius_km", "radius_expanded", "failed_sources", "elapsed_s")},
+            **{k: out[k] for k in _STORED_KEYS},
+            **{k: out[k] for k in ("result_cards", "failed_sources", "elapsed_s")},
         }
 
     def route(next_node: str):
@@ -441,7 +538,8 @@ def build_graph(deps: Deps):
     for name, fn in (
         ("extract", extract), ("classify", classify), ("reset", reset), ("detail", detail),
         ("out_of_scope", out_of_scope), ("check_age", check_age), ("check_nap", check_nap),
-        ("check_departure", check_departure), ("check_date", check_date), ("plan", plan),
+        ("check_departure", check_departure), ("check_date", check_date),
+        ("check_reference", check_reference), ("plan", plan),
         ("delegate", delegate),
     ):
         g.add_node(name, fn)
@@ -454,7 +552,8 @@ def build_graph(deps: Deps):
     g.add_conditional_edges("check_age", route("check_nap"), {END: END, "check_nap": "check_nap"})
     g.add_conditional_edges("check_nap", route("check_departure"), {END: END, "check_departure": "check_departure"})
     g.add_conditional_edges("check_departure", route("check_date"), {END: END, "check_date": "check_date"})
-    g.add_conditional_edges("check_date", route("plan"), {END: END, "plan": "plan"})
+    g.add_conditional_edges("check_date", route("check_reference"), {END: END, "check_reference": "check_reference"})
+    g.add_conditional_edges("check_reference", route("plan"), {END: END, "plan": "plan"})
     g.add_edge("plan", "delegate")
     g.add_edge("delegate", END)
     return g.compile(checkpointer=MemorySaver())
@@ -493,6 +592,8 @@ def _view(result: dict) -> dict:
         "outing_date": result.get("outing_date"),
         "preference_text": result.get("preference_text"),
         "reference_place": result.get("reference_place"),
+        "reference_candidates": [{"name": c.get("name"), "address": c.get("address")}
+                                 for c in result.get("reference_candidates") or []],
     }
 
 
@@ -509,7 +610,7 @@ def recommendation_turn(graph: Any, thread_id: str, message: str, prov: Provider
     if result.get("delegated"):
         messages += list(result.get("progress") or [])
         for k in ("result_cards", "max_drive_hours", "radius_km", "radius_expanded",
-                  "failed_sources", "elapsed_s"):
+                  "failed_sources", "elapsed_s", "preference_status"):
             view[k] = result.get(k)
     view["messages"] = messages
     return view

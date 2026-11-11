@@ -39,4 +39,4 @@
 - [src/backend/agents/](src/backend/agents/) — 서브에이전트 (장소 탐색 · 환경 · 후기·적합도)
 - [src/backend/tools.py](src/backend/tools.py) — 도메인 도구 (외부 API 호출 · 타임아웃)
 - [src/backend/cards.py](src/backend/cards.py) — LLM 출력 검증 · 결과 카드 생성
-- `src/backend/retriever.py` — RAG 파이프라인 (도입 예정)
+- [src/backend/retriever.py](src/backend/retriever.py) · [src/backend/agents/preference.py](src/backend/agents/preference.py) — RAG 파이프라인 (장소 프로필 임베딩 · 취향 매칭)

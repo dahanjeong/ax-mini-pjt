@@ -40,9 +40,9 @@
                     └→ dust ────┘
 후기·적합도 START → fetch_reviews → judge ─┬→ classify_llm → END   (카테고리로 실내/야외 판단 불가)
                                             └→ END                   (카테고리 규칙으로 결정)
-취향 매칭   START ─┬→ resolve_reference → build_query ─┬→ build_profiles → index → score → END
-                    └──────────────→ build_query ──────┘
-                   (유사 장소 요청일 때만 resolve_reference)
+취향 매칭   START → build_query ─┬→ build_profiles → index ─┬→ score → END
+                                  ├→ skip → END (질의 없음)   └→ END (임베딩 실패)
+                                  └→ unavailable → END (임베딩 미설정)
 ```
 
 - 실패한 외부 API는 각 서브그래프의 `failed_sources`(누적 리듀서)에 모인다.
@@ -52,13 +52,14 @@
 
 | 단계 | 내용 |
 |---|---|
-| `resolve_reference` | 기준 장소를 이름으로 검색(TourAPI·카카오 키워드)하고 설명·후기로 프로필을 만든다. 반경 밖이어도 된다. 못 찾거나 후보가 여러 곳이면 `reference_status`로 알려 Supervisor가 되묻는다 |
-| `build_query` | 질의 = 취향 문장, 또는 기준 장소 프로필 (둘 다 있으면 합친다) |
+| (Supervisor) `check_reference` | 기준 장소를 이름으로 전국 키워드 검색하고(`preference.resolve_reference`) 설명·후기 문장으로 프로필을 만든다. 반경 밖이어도 된다. 못 찾으면 다시 묻고("없음"이면 기준 장소 없이 진행), 여러 곳이면 번호로 고르게 한다. 조회 자체가 실패하면 기준 장소 없이 진행하고 안내한다 |
+| `build_query` | 질의 = 취향 문장 + 기준 장소 프로필 문장(최대 6개). "OO은(는) 관광지입니다" 같은 틀 문장은 모든 후보와 비슷하게 나와서 기준 장소 질의에서 뺀다 |
 | `build_profiles` | 후보별 문서 = 장소명 · 카테고리 · TourAPI 개요 · 실내/야외 · 편의시설 · 후기 요약문. 문장 단위로 나눠 근거 추적에 쓴다 |
 | `index` | Bedrock 임베딩(Titan)으로 문장을 임베딩해 메모리 내 벡터 저장소에 넣는다 (`retriever.py`, 요청마다 생성, DB 저장 없음) |
-| `score` | 후보별로 질의와 가장 가까운 문장들의 유사도로 일치 수준(높음/보통/낮음)을 정하고, 근거 문장 최대 2개를 붙인다. 근거 문장이 기준 점수 미만이면 "취향 근거 없음" |
+| `score` | 후보별로 질의와 가장 가까운 문장의 코사인 유사도로 일치 수준을 정한다(0.55 이상 높음, 0.40 이상 보통, 그 밖은 낮음). 0.40 이상인 문장만 근거로 최대 2개 붙인다 (`doc_id` = `<장소키>#<문장번호>`). 기준값은 실제 임베딩 모델로 평가하며 조정한다 |
 
-- **추가 검색 규칙:** 기존 후보로 먼저 매칭한다. 일치 수준이 "높음"인 장소가 3곳 미만이면, Supervisor가 취향 키워드(추출 단계에서 LLM이 뽑음)로 장소 탐색을 한 번 더 실행해 새 후보만 추가로 평가한다.
+- **추가 검색 규칙:** 기존 후보로 먼저 매칭한다. 상위 5곳 중 일치 수준 "높음"이 3곳 미만이면, 파이프라인의 `augment`가 취향 키워드(LLM 추출, 없으면 규칙)로 반경 안을 키워드 검색해 새 후보만 추가로 평가한다. 같은 키워드로는 한 번만 검색한다.
+- **재사용:** 매칭 결과는 세션에 저장한다. 날짜만 바뀌면 같은 질의·같은 후보이므로 임베딩을 다시 호출하지 않는다.
 - **순위 반영:** 일치 수준은 안전 기준(나쁜 날의 야외 장소, 월령 적합도) 다음, 편의시설 수 앞에 반영한다. 유사도 점수의 작은 차이가 순위를 흔들지 않도록 점수 대신 수준(3단계)을 쓴다.
 - **RAGAS 평가:** 취향 질의를 question, 카드에 붙은 근거 문장을 contexts로 쓴다.
 
@@ -69,7 +70,7 @@ START → extract → classify ─┬→ reset → check_age …
                              ├→ detail → END                (저장된 카드로 응답)
                              ├→ out_of_scope → END
                              └→ check_age → check_nap → check_departure → check_date
-                                   → plan → delegate → END
+                                   → check_reference → plan → delegate → END
 (check_* 중 하나가 되묻기를 만들면 그 턴은 END)
 ```
 
@@ -79,10 +80,12 @@ START → extract → classify ─┬→ reset → check_age …
 일임 파이프라인:
 
 ```
-START ─┬─ full ────────▶ search ─┬─▶ evaluate (새 후보별 Send: 환경 ‖ 후기) ─▶ rank
-       ├─ environment ─▶ refresh_env (저장된 후보별 Send) ──────────────────▶ rank
-       └─ rerank ──────────────────────────────────────────────────────────▶ rank
-rank ─┬─▶ widen ─▶ search   (full 범위, 5곳 미만, 아직 넓히지 않음)
+START ─┬─ full ────────▶ search ─┬─▶ evaluate (새 후보별 Send: 환경 ‖ 후기) ─▶ match
+       ├─ environment ─▶ refresh_env (저장된 후보별 Send) ──────────────────▶ match
+       └─ rerank ──────────────────────────────────────────────────────────▶ match
+match (취향 매칭 서브그래프) ─▶ rank (안전 → 취향 → 편의시설 → 거리)
+rank ─┬─▶ widen ─▶ search                (full 범위, 5곳 미만, 아직 넓히지 않음)
+      ├─▶ augment ─▶ evaluate / match    ("높음" 3곳 미만, 새 키워드)
       └─▶ finish ─▶ END
 ```
 
@@ -125,7 +128,7 @@ src/backend/
 └── cards.py             # 결과 카드 생성 · LLM 출력 검증
 ```
 
-`Providers`에 추가될 호출: 키워드 장소 검색(TourAPI·카카오), 텍스트 임베딩(Bedrock), 입력 추출(Bedrock LLM).
+`Providers`의 선택 호출: `keyword_search`(키워드 장소 검색, TourAPI·카카오), `embed`(텍스트 임베딩, Bedrock). 없으면 취향 매칭 없이 추천하고 안내한다. 입력 추출 LLM은 `Deps.extractor`로 주입한다.
 
 ## 공통 원칙
 - 외부 API 하나가 실패하거나 5초 안에 응답하지 않으면 해당 항목만 "정보를 불러오지 못함"으로 표시한다. 임베딩이 실패하면 취향 매칭 없이 기존 순위로 추천하고 그 사실을 안내한다.

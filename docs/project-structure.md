@@ -19,8 +19,10 @@ mini-pjt/
 │       ├── agents/                # 서브에이전트
 │       │   ├── place.py           # 장소 탐색 (반경 · 후보 수집·병합 · 편의시설)
 │       │   ├── environment.py     # 환경 (날씨 · 미세먼지 · 나쁜 날 판정)
-│       │   └── review.py          # 후기·적합도 (후기 · LLM 판정·요약 · 실내/야외)
+│       │   ├── review.py          # 후기·적합도 (후기 · LLM 판정·요약 · 실내/야외)
+│       │   └── preference.py      # 취향 매칭 (기준 장소 조회 · 프로필 · 임베딩 유사도)
 │       ├── tools.py               # 도메인 도구 (외부 API 호출 · 5초 타임아웃 · 실패 기록)
+│       ├── retriever.py           # RAG: 프로필 문장 문서 · 메모리 벡터 저장소 · 코사인 검색
 │       ├── constants.py           # 공통 표시 문구·키
 │       ├── cards.py               # 결과 카드 생성 · LLM 출력 검증
 │       └── tests/                 # pytest 테스트

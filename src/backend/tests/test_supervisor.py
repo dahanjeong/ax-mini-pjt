@@ -149,13 +149,15 @@ def test_preference_change_reranks_without_api_calls(session):
     assert len(v["result_cards"]) == 5
 
 
-def test_similar_place_request_is_recognised(session):
+def test_similar_place_without_lookup_goes_on_without_reference(session):
+    # these providers have no keyword search -> the reference place cannot be looked up
     new, calls = session
     say = new()
     say(FIRST)
     calls.clear()
     v = say("서울숲 좋았는데 비슷한 곳 있을까요?")
-    assert v["intent"] == "similar_place" and v["reference_place"] == "서울숲"
+    assert v["status"] == "ready" and v["reference_place"] is None
+    assert "기준 장소" in v["notice"]
     assert sum(calls.values()) == 0
 
 

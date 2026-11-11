@@ -146,6 +146,16 @@ def parse_reference(text: str) -> Optional[str]:
     return None if name in ("거기", "그곳", "여기", "이곳", "저번", "아기", "아이") else name
 
 
+def preference_keywords(text: str, limit: int = 3) -> list[str]:
+    """Search keywords inside a preference sentence (rule fallback for the LLM extractor)."""
+    out: list[str] = []
+    for m in _PREF_WORDS.finditer(text or ""):
+        w = m.group(0)
+        if w not in out and w not in ("위주", "느낌", "분위기"):
+            out.append(w)
+    return out[:limit]
+
+
 def parse_preference(text: str) -> Optional[str]:
     """The preference sentence itself (slot words removed), when it mentions a mood/feature."""
     if not _PREF_WORDS.search(text):
@@ -158,6 +168,7 @@ def parse_preference(text: str) -> Optional[str]:
 
 # ---------------------------------------------------------------- message class
 
+_CHOICE_AWAITS = ("departure_choice", "reference_choice")
 _RESET = re.compile(r"처음부터|다시\s*시작|새로\s*시작|리셋|초기화")
 _ORDINALS = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5}
 _DETAIL_WORDS = re.compile(r"자세히|더\s*알려|어때|어떤\s*곳|정보|설명|궁금")
@@ -192,7 +203,7 @@ def classify_message(text: str, *, awaiting: Optional[str], card_names: list[str
     if _RESET.search(text):
         return "reset", None
     idx = detail_index(text, card_names)
-    if idx is not None and awaiting != "departure_choice" and (awaiting or not has_new_input):
+    if idx is not None and awaiting not in _CHOICE_AWAITS and (awaiting or not has_new_input):
         # stored cards stay answerable even while an invalid change is being re-asked
         return "place_detail", idx
     if awaiting:

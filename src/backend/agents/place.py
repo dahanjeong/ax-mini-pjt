@@ -1,6 +1,9 @@
 """Place search sub-graph: drive radius -> candidate collection/merge -> public
 facility lookup per candidate (fanned out with Send) -> attach.
 
+`collect` searches by radius (TourAPI + Kakao), or - in keyword mode - by the
+preference keywords only, returning places not already known.
+
     START -> radius -> collect -+-> facilities (x N, parallel) -> attach -> END
                                 +-> attach (no candidates)
 """
@@ -22,6 +25,8 @@ SPEED_KMH = 40.0
 ROAD_FACTOR = 1.3
 WIDEN_FACTOR = 1.5
 PRESELECT_N = 15
+KEYWORD_N = 10
+MAX_KEYWORDS = 3
 MERGE_RATIO = 0.8
 MERGE_METERS = 100.0
 
@@ -49,6 +54,11 @@ def haversine_km(lat1, lng1, lat2, lng2) -> float:
     dp, dl = p2 - p1, math.radians(lng2 - lng1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * 6371.0088 * math.asin(math.sqrt(a))
+
+
+def place_key(p: dict) -> str:
+    """Stable id of a candidate across turns (its source ids)."""
+    return "|".join(f"{k}:{v}" for k, v in sorted(p["ids"].items()))
 
 
 def _norm(name: str) -> str:
@@ -115,6 +125,29 @@ def collect_candidates(prov: Providers, dep: tuple[float, float], radius: float)
     return {"candidates": merged[:PRESELECT_N], "failed_sources": failed}
 
 
+def collect_by_keywords(prov: Providers, dep: tuple[float, float], radius: float,
+                        keywords: list[str], exclude: list[dict]) -> dict:
+    """Extra candidates found by preference keywords within `radius`, excluding places
+    already in `exclude` (at most KEYWORD_N)."""
+    failed: list[str] = []
+    if prov.keyword_search is None:
+        return {"candidates": [], "failed_sources": failed}
+    raw: list[dict] = []
+    for kw in keywords[:MAX_KEYWORDS]:
+        try:
+            items = call_api(prov.keyword_search, kw, dep[0], dep[1], radius) or []
+        except Exception:
+            failed.append("keyword_search")
+            continue
+        for r in items:
+            p = _norm_place(r, r.get("source", "tourapi"), dep)
+            if p and p["distance_km"] <= radius:
+                raw.append(p)
+    fresh = [p for p in merge_places(raw) if not any(is_same_place(p, e) for e in exclude)]
+    fresh.sort(key=lambda p: p["distance_km"])
+    return {"candidates": fresh[:KEYWORD_N], "failed_sources": sorted(set(failed))}
+
+
 def resolve_facilities(public: Optional[dict], mentions: dict, *, mentions_failed: bool) -> dict:
     """Public data first, then NAVER review mentions, else 정보 없음.
 
@@ -144,6 +177,8 @@ class PlaceState(TypedDict, total=False):
     age_months: int
     travels_during_nap: bool
     radius_scale: float             # 1.0, or WIDEN_FACTOR when the supervisor widens the search
+    keywords: list[str]             # keyword mode: only search these preference keywords
+    exclude: list[dict]             # keyword mode: places already known
     # output
     max_drive_hours: float
     radius_km: float
@@ -160,6 +195,9 @@ def build_graph(prov: Providers):
 
     def collect(state: PlaceState) -> dict:
         dep = (state["departure"]["lat"], state["departure"]["lng"])
+        if state.get("keywords"):
+            return collect_by_keywords(prov, dep, state["radius_km"], state["keywords"],
+                                       state.get("exclude") or [])
         return collect_candidates(prov, dep, state["radius_km"])
 
     def fan_out(state: PlaceState):
@@ -195,10 +233,13 @@ def build_graph(prov: Providers):
 
 
 def run(graph: Any, *, departure: dict, age_months: int, travels_during_nap: bool,
-        radius_scale: float = 1.0) -> dict:
+        radius_scale: float = 1.0, keywords: Optional[list[str]] = None,
+        exclude: Optional[list[dict]] = None) -> dict:
+    """Radius search, or (with `keywords`) keyword search for extra candidates."""
     s = graph.invoke({
         "departure": departure, "age_months": age_months,
         "travels_during_nap": bool(travels_during_nap), "radius_scale": radius_scale,
+        "keywords": list(keywords or []), "exclude": list(exclude or []),
     })
     return {
         "max_drive_hours": s["max_drive_hours"],
