@@ -1,0 +1,9 @@
+"""Shared labels and keys used across agents, cards and the supervisor."""
+
+FAIL = "정보를 불러오지 못함"
+UNKNOWN = "정보 없음"
+NO_REVIEW = "후기 정보 없음"
+NO_DUST = "미세먼지 예보 없음"
+
+FACILITY_KEYS = ("nursing_room", "stroller_rental", "parking")
+SUIT_RANK = {"적합": 0, "보통": 1, "부적합": 2}

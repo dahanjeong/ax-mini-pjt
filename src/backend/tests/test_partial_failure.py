@@ -5,7 +5,7 @@ import pytest
 
 from backend import tools as rec
 from backend.cards import build_cards
-from backend.tools import FAIL, FACILITY_KEYS
+from backend.constants import FAIL, FACILITY_KEYS
 from backend.tests.test_recommendation import FAC_ALL, make_providers, run, tp
 
 PLACES = [tp(i, f"장소{i}", 3 + i, type_="tourapi:14") for i in range(1, 6)]

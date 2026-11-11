@@ -4,15 +4,10 @@ from datetime import date
 import pytest
 
 from backend.agent import Deps, build_graph
-from backend.tools import (
-    Providers,
-    evaluate_bad_day,
-    max_drive_hours,
-    merge_places,
-    radius_km_for,
-    recommend,
-    recommendation_turn,
-)
+from backend.agent import recommend, recommendation_turn
+from backend.agents.environment import evaluate_bad_day
+from backend.agents.place import max_drive_hours, merge_places, radius_km_for
+from backend.tools import Providers
 
 DEP = {"name": "강남역", "address": "서울", "lat": 37.5, "lng": 127.0}
 DATE = "2026-11-12"
@@ -186,7 +181,7 @@ def test_ranking_suitability_then_facilities_then_distance():
 
 
 def test_missing_and_failed_facility_info_count_as_zero():
-    from backend.tools import _count
+    from backend.agent import _count
 
     assert _count({"a": {"status": "정보를 불러오지 못함"}, "nursing_room": {"status": "있음"},
                    "parking": {"status": "정보 없음"}, "stroller_rental": {"status": "없음"}}) == 1

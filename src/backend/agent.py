@@ -1,18 +1,28 @@
-"""Ask-back conversation flow, managed by LangGraph (in-memory checkpointer only).
+"""Supervisor: conversation flow and delegation to the sub-agents.
 
-Each user turn runs: extract -> check_age -> check_nap -> check_departure ->
-check_date -> ready. The first check that still needs something sets `reply`
-and ends the turn. State lives in the MemorySaver keyed by thread_id.
+Ask-back (LangGraph, in-memory checkpointer only): each user turn runs
+extract -> check_age -> check_nap -> check_departure -> check_date -> ready.
+The first check that still needs something sets `reply` and ends the turn.
+State lives in the MemorySaver keyed by thread_id.
+
+Once inputs are complete, `recommend` delegates to the place / environment /
+review agents, merges their results per place and ranks them.
 """
 from __future__ import annotations
 
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+
+from .agents import environment, place, review
+from .constants import FACILITY_KEYS, SUIT_RANK
+from .tools import Providers
 
 MIN_AGE, MAX_AGE = 0, 72
 DEFAULT_FORECAST_DAYS = 10
@@ -412,3 +422,114 @@ def chat_turn(graph: Any, thread_id: str, message: str) -> dict:
         "departure_location": result.get("departure_location"),
         "outing_date": result.get("outing_date"),
     }
+
+
+# ---------------------------------------------------------------- delegation
+
+TOP_N = 5
+
+
+def _count(fac: dict) -> int:
+    return sum(1 for k in FACILITY_KEYS if fac.get(k, {}).get("status") == "있음")
+
+
+def evaluate_place(prov: Providers, p: dict, age: int, date_str: str) -> dict:
+    """Run the place-facility, environment and review agents for one place and merge."""
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_pub = ex.submit(place.fetch_public_facilities, prov, p)
+        f_env = ex.submit(environment.assess_environment, prov, p, date_str)
+        f_rev = ex.submit(review.assess_reviews, prov, p, age)
+        pub, env, rev = f_pub.result(), f_env.result(), f_rev.result()
+
+    out = dict(p)
+    for k in ("review_evidence_count", "review_insufficient", "age_suitability",
+              "review_summary", "indoor_outdoor"):
+        out[k] = rev[k]
+    fac = place.resolve_facilities(
+        pub["public_facilities"], rev["facility_mentions"], mentions_failed=rev["mentions_failed"]
+    )
+    out["facilities"] = fac
+    out["facility_count"] = _count(fac)
+    out["weather"] = env["weather"]
+    out["dust"] = env["dust"]
+    out["is_bad_day"] = env["is_bad_day"]
+    out["warnings"] = env["bad_day_warnings"] if rev["indoor_outdoor"] == "outdoor" else []
+    out["failed_sources"] = sorted(set(pub["failed_sources"] + env["failed_sources"] + rev["failed_sources"]))
+    return out
+
+
+def rank_places(places: list[dict]) -> list[dict]:
+    def key(p):
+        outdoor_bad = p["indoor_outdoor"] == "outdoor" and p["is_bad_day"]
+        return (outdoor_bad, SUIT_RANK[p["age_suitability"]], -p["facility_count"], p["distance_km"])
+
+    return sorted(places, key=key)
+
+
+def _run(prov, dep, age, date_str, radius, failed) -> list[dict]:
+    found = place.collect_candidates(prov, dep, radius)
+    failed.extend(found["failed_sources"])
+    cands = found["candidates"]
+    if not cands:
+        return []
+    with ThreadPoolExecutor(max_workers=len(cands)) as ex:
+        evaluated = list(ex.map(lambda p: evaluate_place(prov, p, age, date_str), cands))
+    kept = [p for p in evaluated if p["age_suitability"] != "부적합"]
+    return rank_places(kept)[:TOP_N]
+
+
+def recommend(
+    prov: Providers,
+    *,
+    age_months: int,
+    departure: dict,
+    outing_date: str,
+    travels_during_nap: bool = False,
+    progress: Optional[Callable[[str], None]] = None,
+) -> dict:
+    say = progress or (lambda m: None)
+    t0 = time.monotonic()
+    dep = (departure["lat"], departure["lng"])
+    hours = place.max_drive_hours(age_months, bool(travels_during_nap))
+    radius = place.radius_km_for(hours)
+    expanded = False
+    failed: list[str] = []
+    say("주변 장소를 찾고 있어요...")
+    results = _run(prov, dep, age_months, outing_date, radius, failed)
+    if len(results) < TOP_N:
+        expanded = True
+        radius = radius * place.WIDEN_FACTOR
+        say("후보가 부족해 검색 반경을 1.5배로 넓혀 다시 찾고 있어요...")
+        results = _run(prov, dep, age_months, outing_date, radius, failed)
+    notice = None
+    if len(results) < TOP_N:
+        notice = f"조건에 맞는 장소가 {len(results)}곳뿐이에요. 찾은 장소만 보여드릴게요."
+    say("날씨·편의시설·후기를 확인해 순위를 정했어요.")
+    return {
+        "max_drive_hours": hours,
+        "radius_km": radius,
+        "radius_expanded": expanded,
+        "result_cards": results,
+        "notice": notice,
+        "failed_sources": sorted(set(failed)),
+        "elapsed_s": time.monotonic() - t0,
+    }
+
+
+def recommendation_turn(graph: Any, thread_id: str, message: str, prov: Providers) -> dict:
+    """One chat turn: ask-back via LangGraph; when inputs are complete, run the recommendation."""
+    view = chat_turn(graph, thread_id, message)
+    messages: list[str] = [view["reply"]] if view.get("reply") else []
+    view["messages"] = messages
+    if view["status"] != "ready":
+        return view
+    rec = recommend(
+        prov,
+        age_months=view["baby_age_months"],
+        departure=view["departure_location"],
+        outing_date=view["outing_date"],
+        travels_during_nap=bool(view.get("travels_during_nap")),
+        progress=messages.append,
+    )
+    view.update(rec)
+    return view

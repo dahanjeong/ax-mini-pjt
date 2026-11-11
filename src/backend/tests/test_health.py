@@ -15,7 +15,8 @@ def test_health_endpoint_answers():
 
 
 def test_readme_documents_local_run():
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "docs/run.md" in (ROOT / "README.md").read_text(encoding="utf-8")
+    text = (ROOT / "docs" / "run.md").read_text(encoding="utf-8")
     assert "uvicorn" in text
     assert "npm run dev" in text
     assert "/health" in text
