@@ -22,7 +22,7 @@
   같은 장소 병합 · 편의시설
           │                    │                               │
           └────────────▶ [도메인 도구 · tools.py] ◀────────────┘
-                         외부 API · 임베딩 호출 · 5초 타임아웃 · 부분 실패 처리
+                         외부 API · 임베딩 호출 · 타임아웃(5초/20초) · 부분 실패 처리
 ```
 
 - **Supervisor만 대화를 안다.** 서브그래프는 입력을 받아 정해진 구조의 데이터를 돌려주는 순수 처리 단위다.
@@ -124,13 +124,27 @@ src/backend/
 │   └── preference.py    # 취향 매칭 서브그래프
 ├── retriever.py         # RAG: 장소 프로필 문장 임베딩 · 메모리 벡터 저장소 · 유사도 검색
 ├── tools.py             # 외부 API · 임베딩 호출 (Providers 주입, 타임아웃, 부분 실패)
+├── bedrock.py           # Bedrock: Claude(입력 추출 · 적합도 판정 · 실내/야외) · Titan 임베딩
+├── config.py            # .env 로드 · Bedrock 설정 (지역 · 모델 ID)
 ├── constants.py         # 공통 표시 문구·키
 └── cards.py             # 결과 카드 생성 · LLM 출력 검증
 ```
 
 `Providers`의 선택 호출: `keyword_search`(키워드 장소 검색, TourAPI·카카오), `embed`(텍스트 임베딩, Bedrock). 없으면 취향 매칭 없이 추천하고 안내한다. 입력 추출 LLM은 `Deps.extractor`로 주입한다.
 
+## Bedrock
+
+| 용도 | 모델 | 호출 |
+|---|---|---|
+| 월령 적합도 판정 · 후기 3줄 요약 | `global.anthropic.claude-sonnet-4-6` (us-east-1) | Anthropic SDK `AnthropicBedrock`. 도구 호출을 강제(`tool_choice`)해 정해진 스키마의 JSON으로만 받고, 받은 뒤 다시 검증한다 |
+| 입력 추출(매 메시지) · 실내/야외 판정 | `global.anthropic.claude-haiku-4-5-20251001-v1:0` (us-east-1) | 같은 방식. 정해진 형식을 채우는 단순 작업이라 빠르고 저렴한 모델을 쓰고, 요청 한도도 Sonnet과 나뉜다 |
+| 임베딩 (취향 매칭) | `amazon.titan-embed-text-v2:0` (512차원, 정규화) | `boto3` `bedrock-runtime` `invoke_model`. 한 번에 한 문장이라 병렬 호출 + 프로세스 내 캐시 |
+
+- `anthropic` SDK는 1.17.0으로 고정한다. 2.x는 API 버전 `2026-10-21`을 보내는데, Bedrock은 이 버전을 Claude 4.7 이상에만 받는다.
+- 요청 한도: 모델별 동시 요청을 제한한다(Sonnet 6, Haiku 8, 나머지는 대기). 429·5xx는 SDK가 지수 백오프로 최대 3번 재시도하고, Titan은 boto3 `adaptive` 모드로 재시도한다. 대기와 재시도를 포함한 제한 시간은 20초다.
+- 모델 ID·지역은 `.env`의 `BEDROCK_MODEL_ID`(판정), `BEDROCK_FAST_MODEL_ID`(추출·분류), `BEDROCK_REGION`, `BEDROCK_EMBED_MODEL_ID`로 바꿀 수 있다 (없으면 위 기본값).
+
 ## 공통 원칙
-- 외부 API 하나가 실패하거나 5초 안에 응답하지 않으면 해당 항목만 "정보를 불러오지 못함"으로 표시한다. 임베딩이 실패하면 취향 매칭 없이 기존 순위로 추천하고 그 사실을 안내한다.
+- 외부 API 하나가 실패하거나 제한 시간(공공·검색 API 5초, Bedrock LLM·임베딩 20초) 안에 응답하지 않으면 해당 항목만 "정보를 불러오지 못함"으로 표시한다. 임베딩이 실패하면 취향 매칭 없이 기존 순위로 추천하고 그 사실을 안내한다.
 - API 키는 저장소 루트 `.env`에만 두고 백엔드에서만 사용한다.
 - API 요청·응답 형식은 [api-spec.md](api-spec.md)를 참고한다.

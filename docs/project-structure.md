@@ -21,7 +21,9 @@ mini-pjt/
 │       │   ├── environment.py     # 환경 (날씨 · 미세먼지 · 나쁜 날 판정)
 │       │   ├── review.py          # 후기·적합도 (후기 · LLM 판정·요약 · 실내/야외)
 │       │   └── preference.py      # 취향 매칭 (기준 장소 조회 · 프로필 · 임베딩 유사도)
-│       ├── tools.py               # 도메인 도구 (외부 API 호출 · 5초 타임아웃 · 실패 기록)
+│       ├── tools.py               # 도메인 도구 (외부 API 호출 · 타임아웃 · 실패 기록)
+│       ├── bedrock.py             # Bedrock: Claude(추출 · 판정) · Titan 임베딩
+│       ├── config.py              # .env 로드 · Bedrock 설정
 │       ├── retriever.py           # RAG: 프로필 문장 문서 · 메모리 벡터 저장소 · 코사인 검색
 │       ├── constants.py           # 공통 표시 문구·키
 │       ├── cards.py               # 결과 카드 생성 · LLM 출력 검증
