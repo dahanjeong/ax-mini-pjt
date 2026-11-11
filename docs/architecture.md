@@ -119,6 +119,9 @@ rank ─┬─▶ widen ─▶ search                (full 범위, 5곳 미만, 
 ```
 src/backend/
 ├── main.py              # FastAPI 진입점
+├── api/                 # 우리가 제공하는 API
+│   ├── chat.py          # POST /chat: 세션 · 한 턴 실행 · 결과 카드 · 오류 처리
+│   └── schemas.py       # 요청 / 응답 형식
 ├── agent.py             # Supervisor 그래프 (메시지 분류 · 되묻기 · 재실행 범위 · 일임)
 ├── tools.py             # 도메인 도구 계약 (Providers) · 타임아웃 · 실패 기록
 ├── retriever.py         # RAG: 장소 프로필 문장 · 메모리 벡터 저장소 · 코사인 검색

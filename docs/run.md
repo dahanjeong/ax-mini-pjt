@@ -32,6 +32,17 @@ npm run dev
 ```
 브라우저에서 http://localhost:5173 을 연다.
 
+## 채팅 API 호출 예
+백엔드를 띄운 뒤:
+```bash
+curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
+     -d '{"message": "30개월 아기랑 이번 토요일에 강남역에서 출발해요"}'
+# 응답의 session_id를 다음 요청에 넣으면 대화가 이어진다
+curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
+     -d '{"session_id": "<위 응답의 session_id>", "message": "2번째 곳 더 알려줘"}'
+```
+연동 서비스는 첫 `/chat` 요청 때 준비된다. `.env` 키가 빠져 있으면 500 `internal error`가 돌아오고 서버 로그에 원인이 남는다.
+
 ## 테스트
 저장소 루트에서:
 ```bash

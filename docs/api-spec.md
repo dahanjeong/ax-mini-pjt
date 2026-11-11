@@ -5,7 +5,7 @@
 | 메서드 | 경로 | 설명 | 상태 |
 |---|---|---|---|
 | GET | `/health` | 서버 상태 확인 | 구현됨 |
-| POST | `/chat` | 채팅 1턴 처리 (되묻기 또는 장소 추천) | 예정 |
+| POST | `/chat` | 채팅 1턴 처리 (되묻기 또는 장소 추천) | 구현됨 ([src/backend/api/chat.py](../src/backend/api/chat.py)) |
 
 응답 구조는 현재 코드의 출력 그대로다.
 - 되묻기: [src/backend/agent.py](../src/backend/agent.py) `chat_turn`
@@ -33,8 +33,8 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `session_id` | string | X | 이어서 대화할 세션 ID (LangGraph `thread_id`). 없으면 서버가 새로 만든다 |
-| `message` | string | O | 사용자 메시지 |
+| `session_id` | string | X | 이어서 대화할 세션 ID (LangGraph `thread_id`, 최대 100자). 없으면 서버가 새로 만든다. 모르는 ID면 새 대화로 시작한다 |
+| `message` | string | O | 사용자 메시지 (1~500자, 앞뒤 공백 제거) |
 
 ```json
 {"session_id": "3f2a9c1e-...", "message": "18개월 아기랑 이번 토요일에 강남역에서 출발해요"}
@@ -63,7 +63,7 @@
 | `reference_place` | string \| null | "비슷한 곳" 요청의 기준 장소명 |
 | `reference_candidates` | array | 기준 장소 이름이 여러 곳일 때 후보 목록 `[{name, address}]` (번호나 이름으로 고름) |
 
-### Response 200 — 추천 필드 (`status: "ready"`일 때만)
+### Response 200 — 추천 필드 (이번 턴에 추천을 실행했을 때만, 아니면 `null`)
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
@@ -155,8 +155,8 @@
 
 | 코드 | 상황 |
 |---|---|
-| 422 | `message`가 없거나 빈 문자열 |
-| 500 | 처리 중 예기치 못한 오류 (내부 정보·API 키 노출 금지) |
+| 422 | `message`가 없거나 공백뿐이거나 500자 초과, `session_id`가 100자 초과 |
+| 500 | 처리 중 예기치 못한 오류, 또는 서버가 연동 서비스를 준비하지 못함(`.env` 키 누락 등). 응답은 항상 `{"detail": "internal error"}`이고 원인은 서버 로그에만 남긴다 (내부 정보·API 키 노출 금지) |
 
 ---
 

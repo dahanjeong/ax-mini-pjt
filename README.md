@@ -37,5 +37,6 @@
 - [src/backend/tools.py](src/backend/tools.py) — 도메인 도구 (Providers 계약 · 타임아웃 · 실패 기록), 실제 구현은 [src/backend/integrations/](src/backend/integrations/)
 - [src/backend/retriever.py](src/backend/retriever.py) · [src/backend/agents/preference.py](src/backend/agents/preference.py) — RAG 파이프라인 (장소 프로필 임베딩 · 취향 매칭)
 - [src/backend/supervisor/pipeline.py:165](src/backend/supervisor/pipeline.py#L165) — 일임 파이프라인 (서브에이전트 실행 · 순위, `build_pipeline`)
+- [src/backend/api/chat.py](src/backend/api/chat.py) — `POST /chat` 엔드포인트
 - [src/backend/agents/](src/backend/agents/) — 서브에이전트 (장소 탐색 · 환경 · 후기·적합도 · 취향 매칭)
 - [src/backend/prompts/](src/backend/prompts/) — LLM 프롬프트 · 답 스키마 · 답 검증

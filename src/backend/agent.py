@@ -575,11 +575,15 @@ def _invoke(graph: Any, thread_id: str, message: str, prov: Optional[Providers])
     return graph.invoke({"message": message}, config=cfg)
 
 
+_INTERNAL_INTENTS = {"continue"}          # message class before the input checks; not part of the API
+
+
 def _view(result: dict) -> dict:
+    intent = result.get("intent")
     return {
         "reply": result.get("reply"),
         "status": result.get("status", "ask"),
-        "intent": result.get("intent") or "ask",
+        "intent": "ask" if not intent or intent in _INTERNAL_INTENTS else intent,
         "notice": result.get("notice"),
         "missing_inputs": result.get("missing_inputs", []),
         "candidates": result.get("departure_candidates") or [],

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]          # repository root (src/backend/core/config.py)
 
 DEFAULT_BEDROCK_REGION = "us-east-1"
 # One chain of (region, model) per task. Bedrock quotas are per region, per model and
