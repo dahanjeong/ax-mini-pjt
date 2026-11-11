@@ -62,6 +62,30 @@
 - **순위 반영:** 일치 수준은 안전 기준(나쁜 날의 야외 장소, 월령 적합도) 다음, 편의시설 수 앞에 반영한다. 유사도 점수의 작은 차이가 순위를 흔들지 않도록 점수 대신 수준(3단계)을 쓴다.
 - **RAGAS 평가:** 취향 질의를 question, 카드에 붙은 근거 문장을 contexts로 쓴다.
 
+## Supervisor 그래프
+
+```
+START → extract → classify ─┬→ reset → check_age …
+                             ├→ detail → END                (저장된 카드로 응답)
+                             ├→ out_of_scope → END
+                             └→ check_age → check_nap → check_departure → check_date
+                                   → plan → delegate → END
+(check_* 중 하나가 되묻기를 만들면 그 턴은 END)
+```
+
+- `plan`: 직전 검색에 쓴 입력(`searched`)과 지금 입력을 비교해 의도와 재실행 범위(`full` / `environment` / `rerank`)를 정한다.
+- `delegate`: 일임 파이프라인([pipeline.py](../src/backend/pipeline.py))을 실행한다. Providers는 상태가 아니라 실행 설정(`config["configurable"]["providers"]`)으로 받는다.
+
+일임 파이프라인:
+
+```
+START ─┬─ full ────────▶ search ─┬─▶ evaluate (새 후보별 Send: 환경 ‖ 후기) ─▶ rank
+       ├─ environment ─▶ refresh_env (저장된 후보별 Send) ──────────────────▶ rank
+       └─ rerank ──────────────────────────────────────────────────────────▶ rank
+rank ─┬─▶ widen ─▶ search   (full 범위, 5곳 미만, 아직 넓히지 않음)
+      └─▶ finish ─▶ END
+```
+
 ## Supervisor 의도 판정과 재실행 범위
 
 이번 메시지에서 추출한 입력(LLM, 고정 JSON)을 직전 상태와 비교하고, 장소를 가리키는 표현이 있는지 확인해 규칙으로 판정한다.
@@ -87,8 +111,9 @@
 ```
 src/backend/
 ├── main.py              # FastAPI 엔드포인트
-├── agent.py             # Supervisor 그래프 (입력 확인 · 일임 · 취합 · 순위)
+├── agent.py             # Supervisor 그래프 (메시지 분류 · 입력 확인 · 재실행 범위 · 일임)
 ├── intent.py            # 입력 추출 · 의도 판정 · 재실행 범위 결정 (순수 함수)
+├── pipeline.py          # 일임 파이프라인 (장소 탐색 → 후보별 환경·후기 → 취합·순위)
 ├── agents/
 │   ├── place.py         # 장소 탐색 서브그래프
 │   ├── environment.py   # 환경 서브그래프

@@ -13,7 +13,9 @@ mini-pjt/
 │   │       └── PlaceCard.jsx      # 추천 결과 카드
 │   └── backend/                   # FastAPI 백엔드
 │       ├── main.py                # API 서버 진입점
-│       ├── agent.py               # Supervisor (되묻기 흐름 · 서브에이전트 일임 · 취합·순위)
+│       ├── agent.py               # Supervisor 그래프 (메시지 분류 · 되묻기 · 재실행 범위 · 일임)
+│       ├── intent.py              # 입력 추출 · 의도 판정 · 재실행 범위 결정 (순수 함수)
+│       ├── pipeline.py            # 일임 파이프라인 (장소 탐색 → 후보별 환경·후기 → 순위)
 │       ├── agents/                # 서브에이전트
 │       │   ├── place.py           # 장소 탐색 (반경 · 후보 수집·병합 · 편의시설)
 │       │   ├── environment.py     # 환경 (날씨 · 미세먼지 · 나쁜 날 판정)

@@ -1,30 +1,41 @@
-"""Supervisor: conversation flow and delegation to the sub-agents.
+"""Supervisor: understands the conversation and delegates to the sub-agents.
 
-Ask-back (LangGraph, in-memory checkpointer only): each user turn runs
-extract -> check_age -> check_nap -> check_departure -> check_date -> ready.
-The first check that still needs something sets `reply` and ends the turn.
-State lives in the MemorySaver keyed by thread_id.
+Graph (LangGraph, in-memory checkpointer keyed by thread_id):
 
-Once inputs are complete, `recommend` delegates to the place / environment /
-review agents, merges their results per place and ranks them.
+    START -> extract -> classify -+-> reset -> check_age ...
+                                  +-> detail -> END            (stored card)
+                                  +-> out_of_scope -> END
+                                  +-> check_age -> check_nap -> check_departure -> check_date
+                                        -> plan -> delegate -> END
+
+- extract   slots (age, nap, departure, date) + optional preference / reference place
+- check_*   the first missing or invalid required input sets `reply` and ends the turn
+- plan      intent + re-run scope by comparing with the inputs of the last search
+- delegate  runs the delegation pipeline (pipeline.py) with the providers passed in
+            `config["configurable"]["providers"]`; without providers it stops at
+            status=ready (conversation only)
+
+Results of the last run (candidates, per-place evaluations, cards) are kept in the
+session state so a narrower scope reuses them.
 """
 from __future__ import annotations
 
 import re
-import time
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any, Callable, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from .agents import environment, place, review
-from .constants import FACILITY_KEYS, SUIT_RANK
+from .intent import (
+    _AGE_TOKENS, _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, SCOPE_FULL, _NonNumeric,
+    classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference,
+    parse_reference, plan_scope, search_snapshot,
+)
+from .pipeline import TOP_N, _count, build_pipeline, rank_places, recommend, run_pipeline  # noqa: F401
 from .tools import Providers
 
-MIN_AGE, MAX_AGE = 0, 72
 DEFAULT_FORECAST_DAYS = 10
 MAX_CANDIDATES = 5
 
@@ -32,8 +43,26 @@ MAX_CANDIDATES = 5
 GeocodeFn = Callable[[str], list[dict]]
 # date_range(today) -> (start, end) covered by the forecast
 DateRangeFn = Callable[[date], tuple[date, date]]
-# optional LLM extractor(message, awaiting) -> partial dict (age_months, departure_query, date_text, travels_during_nap)
+# optional LLM extractor(message, awaiting) -> partial dict:
+#   age_months, departure_query, date_text, travels_during_nap, preference_text, reference_place
 ExtractorFn = Callable[[str, Optional[str]], dict]
+
+_SLOT_KEYS = ("baby_age_months", "travels_during_nap", "outing_date", "departure_query",
+              "departure_location", "preference_text", "reference_place")
+_RESULT_KEYS = ("candidates", "evaluations", "result_cards", "max_drive_hours", "radius_km",
+                "radius_expanded", "failed_sources", "elapsed_s", "searched")
+
+OUT_OF_SCOPE_REPLY = ("저는 아기와 함께 갈 나들이 장소 추천을 도와드려요. "
+                      "아기 월령, 출발지, 날짜를 알려주시면 장소를 찾아볼게요.")
+INTENT_REPLY = {
+    "new_search": "입력이 모두 확인됐어요. 추천 장소를 찾아볼게요!",
+    "change_departure": "출발지가 바뀌어서 장소를 다시 찾아볼게요.",
+    "change_age": "월령·낮잠 조건이 바뀌어서 이동 반경과 적합도를 다시 확인할게요.",
+    "change_date": "날짜를 {date}로 바꿔서 날씨·미세먼지만 다시 확인할게요.",
+    "change_preference": "말씀하신 취향을 반영해 순위를 다시 정할게요.",
+    "similar_place": "'{ref}'와 비슷한 곳을 기준으로 순위를 다시 정할게요.",
+    "no_change": "조건이 그대로라 이전 추천을 다시 보여드릴게요.",
+}
 
 
 def default_date_range(today: date) -> tuple[date, date]:
@@ -50,6 +79,7 @@ class Deps:
 
 class ChatState(TypedDict, total=False):
     message: str
+    # required inputs
     baby_age_months: Optional[int]
     departure_query: Optional[str]
     departure_location: Optional[dict]
@@ -57,117 +87,47 @@ class ChatState(TypedDict, total=False):
     outing_date: Optional[str]
     travels_during_nap: Optional[bool]
     nap_asked: bool
+    # optional inputs
+    preference_text: Optional[str]
+    reference_place: Optional[str]
+    # turn bookkeeping
     awaiting: Optional[str]  # age | nap | departure | departure_choice | date
+    prev_awaiting: Optional[str]
+    has_new_input: bool
     missing_inputs: list
     available_date_range: Optional[dict]
     notice: Optional[str]
     reply: Optional[str]
     status: str  # ask | ready
+    intent: Optional[str]
+    scope: Optional[str]
+    detail_index: Optional[int]
+    delegated: bool
+    progress: list
+    # last delegation results (kept across turns)
+    searched: Optional[dict]
+    candidates: list
+    evaluations: dict
+    result_cards: list
+    max_drive_hours: Optional[float]
+    radius_km: Optional[float]
+    radius_expanded: bool
+    failed_sources: list
+    elapsed_s: Optional[float]
 
 
-# ---------------------------------------------------------------- parsing
-
-_NUM = r"-?\d+(?:\.\d+)?"
-_WEEKDAYS = {"월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6}
+_PIPELINES: dict[int, tuple[Providers, Any]] = {}
 
 
-class _NonNumeric(Exception):
-    pass
-
-
-def parse_age(text: str, awaiting: Optional[str]) -> Optional[float]:
-    """Return age in months, None when absent. Raises _NonNumeric for a given but non-numeric age."""
-    m = re.search(rf"({_NUM})\s*(?:개월|달)", text)
-    if m:
-        return float(m.group(1))
-    m = re.search(rf"({_NUM})\s*(?:살|세)(?![가-힣]*\s*(?:이상))", text)
-    if m:
-        return float(m.group(1)) * 12
-    if "신생아" in text:
-        return 0.0
-    if awaiting == "age":
-        m = re.fullmatch(rf"\s*({_NUM})\s*", text)
-        if m:
-            return float(m.group(1))
-        raise _NonNumeric
-    if re.search(r"(?:개월|월령)", text) and not re.search(r"\d", text):
-        raise _NonNumeric
-    return None
-
-
-def _weekday_date(today: date, wd: int, week_offset: Optional[int]) -> date:
-    if week_offset is None:
-        delta = (wd - today.weekday()) % 7
-        return today + timedelta(days=delta)
-    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
-    return monday + timedelta(days=wd)
-
-
-def parse_date(text: str, today: date) -> Optional[date]:
-    m = re.search(r"(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})", text)
-    if m:
-        try:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        except ValueError:
-            return None
-    m = re.search(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일?", text)
-    if m:
-        try:
-            return date(today.year, int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            return None
-    m = re.search(r"(\d+)\s*일\s*(?:뒤|후)", text)
-    if m:
-        return today + timedelta(days=int(m.group(1)))
-    for word, delta in (("글피", 3), ("모레", 2), ("내일", 1), ("오늘", 0), ("어제", -1), ("그제", -2), ("그저께", -2)):
-        if word in text:
-            return today + timedelta(days=delta)
-    m = re.search(r"(다음\s*주|담주|이번\s*주|금주)?\s*([월화수목금토일])요일", text)
-    if m:
-        prefix = m.group(1) or ""
-        off = 1 if ("다음" in prefix or "담주" in prefix) else (0 if prefix else None)
-        return _weekday_date(today, _WEEKDAYS[m.group(2)], off)
-    m = re.search(r"(다음\s*주|이번\s*주)?\s*주말", text)
-    if m:
-        off = 1 if m.group(1) and "다음" in m.group(1) else (0 if m.group(1) else None)
-        return _weekday_date(today, 5, off)
-    return None
-
-
-_DATE_TOKENS = re.compile(
-    r"\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?|\d{1,2}\s*월\s*\d{1,2}\s*일?|\d+\s*일\s*(?:뒤|후)|"
-    r"글피|모레|내일|오늘|어제|그제|그저께|(?:다음\s*주|담주|이번\s*주|금주)?\s*[월화수목금토일]요일|"
-    r"(?:다음\s*주|이번\s*주)?\s*주말|다음\s*주|이번\s*주"
-)
-_AGE_TOKENS = re.compile(rf"{_NUM}\s*(?:개월|달|살|세)(?:인|된)?|(?:신생아|아기|아이|애기|월령)(?:랑|와|과|하고|는|가|도)?")
-_NAP_TOKENS = re.compile(r"낮잠[^,.]*")
-_TAIL = re.compile(r"(?:에서|서)?\s*(?:출발(?:할게요|해요|합니다|할래요|할 예정이에요|할 거예요)?|갈게요|가요|갈래요|예요|이에요|입니다|이요|요|에요)?[.!?\s]*$")
-
-
-def parse_nap(text: str) -> Optional[bool]:
-    t = text.strip()
-    if re.search(r"(아니|안\s*(?:자|해)|없|괜찮|상관\s*없|피해|피할|아닌|no\b)", t, re.I):
-        return False
-    if re.search(r"(네|넵|예|응|어|맞|그래|있|겹|낮잠\s*시간에|yes\b)", t, re.I):
-        return True
-    return None
-
-
-def parse_departure(text: str, awaiting: Optional[str]) -> Optional[str]:
-    cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", text)))
-    m = re.search(r"출발지\s*(?:는|은|:)?\s*([^\s,.]+(?: [^\s,.]+)?)", cleaned)
-    if m:
-        cand = re.sub(r"(?:이에요|예요|입니다|이요|에서)$", "", m.group(1).strip())
-        if cand:
-            return cand
-    m = re.search(r"([^\s,.]+(?: [^\s,.]+)?)\s*에서", cleaned)
-    if m:
-        return m.group(1).strip()
-    if awaiting in ("departure", "departure_choice"):
-        cand = _TAIL.sub("", cleaned).strip(" ,.!?")
-        cand = re.sub(r"^(?:저는|제가|우리는|출발지는|에서)\s*", "", cand).strip()
-        return cand or None
-    return None
+def _pipeline_for(prov: Providers) -> Any:
+    hit = _PIPELINES.get(id(prov))
+    if hit and hit[0] is prov:
+        return hit[1]
+    if len(_PIPELINES) > 32:
+        _PIPELINES.clear()
+    pipe = build_pipeline(prov)
+    _PIPELINES[id(prov)] = (prov, pipe)
+    return pipe
 
 
 # ---------------------------------------------------------------- nodes
@@ -176,11 +136,36 @@ def _fmt(d: date) -> str:
     return d.isoformat()
 
 
+_FAC_LABELS = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
+
+
+def _card_text(i: int, c: dict) -> str:
+    io = "실내" if c.get("indoor_outdoor") == "indoor" else "야외"
+    fac = " · ".join(f"{_FAC_LABELS.get(k, k)}: {f.get('status')}" for k, f in (c.get("facilities") or {}).items())
+    w = c.get("weather") or {}
+    weather = w.get("status") or f"강수확률 {w.get('precip_prob_max')}% · 최고 {w.get('temp_max')}℃ / 최저 {w.get('temp_min')}℃"
+    d = c.get("dust") or {}
+    dust = d.get("status") or f"PM10 {d.get('pm10_grade')} · PM2.5 {d.get('pm25_grade')}"
+    lines = [
+        f"{i + 1}위 {c['name']} ({io}, 직선거리 {round(float(c['distance_km']), 1)}km, 월령 적합도 {c.get('age_suitability')})",
+        f"편의시설: {fac}",
+        f"날씨: {weather}",
+        f"미세먼지: {dust}",
+    ]
+    if c.get("warnings"):
+        lines.append("주의: " + ", ".join(c["warnings"]))
+    lines.append("후기 요약: " + " / ".join(c.get("review_summary") or []))
+    return "\n".join(lines)
+
+
 def build_graph(deps: Deps):
-    def extract(state: ChatState) -> ChatState:
+    def _extract(state: ChatState) -> ChatState:
         text = (state.get("message") or "").strip()
         awaiting = state.get("awaiting")
-        out: ChatState = {"reply": None, "notice": None, "status": "ask", "awaiting": None}
+        out: ChatState = {
+            "reply": None, "notice": None, "status": "ask", "awaiting": None, "prev_awaiting": awaiting,
+            "intent": None, "scope": None, "detail_index": None, "delegated": False, "progress": [],
+        }
         today = deps.today()
         llm: dict = {}
         if deps.extractor is not None:
@@ -247,6 +232,17 @@ def build_graph(deps: Deps):
             out["outing_date"] = None
             out["notice"] = "날짜를 이해하지 못했어요. 예: 내일, 11월 15일, 2026-11-15"
 
+        # ---- preference / reference place (optional; LLM first, rule fallback)
+        pref = llm.get("preference_text") if isinstance(llm.get("preference_text"), str) else None
+        ref = llm.get("reference_place") if isinstance(llm.get("reference_place"), str) else None
+        if not llm and awaiting not in ("departure", "departure_choice"):
+            pref = parse_preference(text)
+            ref = parse_reference(text)
+        if ref:
+            out["reference_place"] = ref.strip()
+        if pref:
+            out["preference_text"] = pref.strip()
+
         # ---- departure
         candidates = state.get("departure_candidates") or []
         if awaiting == "departure_choice" and candidates:
@@ -272,6 +268,40 @@ def build_graph(deps: Deps):
             out["departure_location"] = None
             out["departure_candidates"] = []
         return out
+
+    def extract(state: ChatState) -> ChatState:
+        out = _extract(state)
+        out["has_new_input"] = any(k in out for k in _SLOT_KEYS) or bool(out.get("notice"))
+        return out
+
+    def classify(state: ChatState) -> ChatState:
+        names = [c["name"] for c in state.get("result_cards") or []]
+        kind, idx = classify_message(
+            (state.get("message") or "").strip(), awaiting=state.get("prev_awaiting"),
+            card_names=names, has_new_input=bool(state.get("has_new_input")),
+        )
+        return {"intent": kind, "detail_index": idx}
+
+    def route_message(state: ChatState) -> str:
+        return {"reset": "reset", "place_detail": "detail", "out_of_scope": "out_of_scope"}.get(
+            state.get("intent"), "check_age")
+
+    def reset(state: ChatState) -> ChatState:
+        cleared: ChatState = {k: None for k in _SLOT_KEYS}
+        cleared.update({k: None for k in _RESULT_KEYS})
+        cleared.update({"departure_candidates": [], "nap_asked": False, "candidates": [],
+                        "evaluations": {}, "result_cards": [], "failed_sources": [],
+                        "radius_expanded": False, "notice": "처음부터 다시 할게요."})
+        return cleared
+
+    def detail(state: ChatState) -> ChatState:
+        i = state["detail_index"]
+        # keep waiting for a pending answer (e.g. a re-asked date) after answering
+        return {"status": "ready", "reply": _card_text(i, state["result_cards"][i]),
+                "awaiting": state.get("prev_awaiting"), "notice": None}
+
+    def out_of_scope(state: ChatState) -> ChatState:
+        return {"reply": OUT_OF_SCOPE_REPLY, "missing_inputs": _missing(state)}
 
     def check_age(state: ChatState) -> ChatState:
         if state.get("baby_age_months") is None:
@@ -368,13 +398,40 @@ def build_graph(deps: Deps):
             }
         return {"available_date_range": rng}
 
-    def ready(state: ChatState) -> ChatState:
+    def plan(state: ChatState) -> ChatState:
+        current = search_snapshot(state)
+        intent, scope = plan_scope(state.get("searched"), current)
+        if scope != SCOPE_FULL and not state.get("candidates"):
+            intent, scope = "new_search", SCOPE_FULL
+        reply = INTENT_REPLY[intent].format(date=state.get("outing_date"), ref=state.get("reference_place"))
         return {
             "status": "ready",
+            "intent": intent,
+            "scope": scope,
             "awaiting": None,
             "missing_inputs": [],
             "notice": None,
-            "reply": "입력이 모두 확인됐어요. 추천 장소를 찾아볼게요!",
+            "reply": reply,
+        }
+
+    def delegate(state: ChatState, config) -> ChatState:
+        prov = ((config or {}).get("configurable") or {}).get("providers")
+        if prov is None:
+            return {}
+        out = run_pipeline(
+            _pipeline_for(prov), scope=state["scope"],
+            departure=state["departure_location"], age_months=state["baby_age_months"],
+            outing_date=state["outing_date"], travels_during_nap=bool(state.get("travels_during_nap")),
+            stored={k: state.get(k) for k in ("candidates", "evaluations", "max_drive_hours",
+                                               "radius_km", "radius_expanded")},
+        )
+        return {
+            "delegated": True,
+            "progress": out["messages"],
+            "notice": out["notice"],
+            "searched": search_snapshot(state),
+            **{k: out[k] for k in ("candidates", "evaluations", "result_cards", "max_drive_hours",
+                                   "radius_km", "radius_expanded", "failed_sources", "elapsed_s")},
         }
 
     def route(next_node: str):
@@ -382,17 +439,24 @@ def build_graph(deps: Deps):
 
     g = StateGraph(ChatState)
     for name, fn in (
-        ("extract", extract), ("check_age", check_age), ("check_nap", check_nap),
-        ("check_departure", check_departure), ("check_date", check_date), ("ready", ready),
+        ("extract", extract), ("classify", classify), ("reset", reset), ("detail", detail),
+        ("out_of_scope", out_of_scope), ("check_age", check_age), ("check_nap", check_nap),
+        ("check_departure", check_departure), ("check_date", check_date), ("plan", plan),
+        ("delegate", delegate),
     ):
         g.add_node(name, fn)
     g.add_edge(START, "extract")
-    g.add_edge("extract", "check_age")
+    g.add_edge("extract", "classify")
+    g.add_conditional_edges("classify", route_message, ["reset", "detail", "out_of_scope", "check_age"])
+    g.add_edge("reset", "check_age")
+    g.add_edge("detail", END)
+    g.add_edge("out_of_scope", END)
     g.add_conditional_edges("check_age", route("check_nap"), {END: END, "check_nap": "check_nap"})
     g.add_conditional_edges("check_nap", route("check_departure"), {END: END, "check_departure": "check_departure"})
     g.add_conditional_edges("check_departure", route("check_date"), {END: END, "check_date": "check_date"})
-    g.add_conditional_edges("check_date", route("ready"), {END: END, "ready": "ready"})
-    g.add_edge("ready", END)
+    g.add_conditional_edges("check_date", route("plan"), {END: END, "plan": "plan"})
+    g.add_edge("plan", "delegate")
+    g.add_edge("delegate", END)
     return g.compile(checkpointer=MemorySaver())
 
 
@@ -407,12 +471,18 @@ def _missing(state: ChatState, with_age: bool = False) -> list:
     return m
 
 
-def chat_turn(graph: Any, thread_id: str, message: str) -> dict:
-    """Run one user turn and return the public view of the conversation state."""
-    result = graph.invoke({"message": message}, config={"configurable": {"thread_id": thread_id}})
+def _invoke(graph: Any, thread_id: str, message: str, prov: Optional[Providers]) -> dict:
+    cfg: dict = {"configurable": {"thread_id": thread_id}}
+    if prov is not None:
+        cfg["configurable"]["providers"] = prov
+    return graph.invoke({"message": message}, config=cfg)
+
+
+def _view(result: dict) -> dict:
     return {
         "reply": result.get("reply"),
         "status": result.get("status", "ask"),
+        "intent": result.get("intent") or "ask",
         "notice": result.get("notice"),
         "missing_inputs": result.get("missing_inputs", []),
         "candidates": result.get("departure_candidates") or [],
@@ -421,128 +491,25 @@ def chat_turn(graph: Any, thread_id: str, message: str) -> dict:
         "travels_during_nap": result.get("travels_during_nap"),
         "departure_location": result.get("departure_location"),
         "outing_date": result.get("outing_date"),
+        "preference_text": result.get("preference_text"),
+        "reference_place": result.get("reference_place"),
     }
 
 
-# ---------------------------------------------------------------- delegation
-
-TOP_N = 5
-
-
-def _count(fac: dict) -> int:
-    return sum(1 for k in FACILITY_KEYS if fac.get(k, {}).get("status") == "있음")
-
-
-@dataclass
-class SubAgents:
-    """Compiled sub-graphs, bound to one set of providers."""
-    place: Any
-    environment: Any
-    review: Any
-
-    @classmethod
-    def build(cls, prov: Providers) -> "SubAgents":
-        return cls(place.build_graph(prov), environment.build_graph(prov), review.build_graph(prov))
-
-
-def evaluate_place(sub: SubAgents, p: dict, age: int, date_str: str) -> dict:
-    """Delegate one candidate to the environment and review agents (in parallel) and merge
-    with the place agent's public facility lookup."""
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_env = ex.submit(environment.run, sub.environment, place=p, date=date_str)
-        f_rev = ex.submit(review.run, sub.review, place=p, age_months=age)
-        env, rev = f_env.result(), f_rev.result()
-
-    out = {k: v for k, v in p.items() if k not in ("public_facilities", "public_failed_sources")}
-    for k in ("review_evidence_count", "review_insufficient", "age_suitability",
-              "review_summary", "indoor_outdoor"):
-        out[k] = rev[k]
-    fac = place.resolve_facilities(
-        p.get("public_facilities"), rev["facility_mentions"], mentions_failed=rev["mentions_failed"]
-    )
-    out["facilities"] = fac
-    out["facility_count"] = _count(fac)
-    out["weather"] = env["weather"]
-    out["dust"] = env["dust"]
-    out["is_bad_day"] = env["is_bad_day"]
-    out["warnings"] = env["bad_day_warnings"] if rev["indoor_outdoor"] == "outdoor" else []
-    out["failed_sources"] = sorted(set(
-        list(p.get("public_failed_sources") or []) + env["failed_sources"] + rev["failed_sources"]
-    ))
-    return out
-
-
-def rank_places(places: list[dict]) -> list[dict]:
-    def key(p):
-        outdoor_bad = p["indoor_outdoor"] == "outdoor" and p["is_bad_day"]
-        return (outdoor_bad, SUIT_RANK[p["age_suitability"]], -p["facility_count"], p["distance_km"])
-
-    return sorted(places, key=key)
-
-
-def _run(sub: SubAgents, dep: dict, age: int, nap: bool, date_str: str, scale: float,
-         failed: list) -> tuple[dict, list[dict]]:
-    found = place.run(sub.place, departure=dep, age_months=age, travels_during_nap=nap, radius_scale=scale)
-    failed.extend(found["failed_sources"])
-    cands = found["candidates"]
-    if not cands:
-        return found, []
-    with ThreadPoolExecutor(max_workers=len(cands)) as ex:
-        evaluated = list(ex.map(lambda p: evaluate_place(sub, p, age, date_str), cands))
-    kept = [p for p in evaluated if p["age_suitability"] != "부적합"]
-    return found, rank_places(kept)[:TOP_N]
-
-
-def recommend(
-    prov: Providers,
-    *,
-    age_months: int,
-    departure: dict,
-    outing_date: str,
-    travels_during_nap: bool = False,
-    progress: Optional[Callable[[str], None]] = None,
-) -> dict:
-    say = progress or (lambda m: None)
-    t0 = time.monotonic()
-    sub = SubAgents.build(prov)
-    nap = bool(travels_during_nap)
-    expanded = False
-    failed: list[str] = []
-    say("주변 장소를 찾고 있어요...")
-    found, results = _run(sub, departure, age_months, nap, outing_date, 1.0, failed)
-    if len(results) < TOP_N:
-        expanded = True
-        say("후보가 부족해 검색 반경을 1.5배로 넓혀 다시 찾고 있어요...")
-        found, results = _run(sub, departure, age_months, nap, outing_date, place.WIDEN_FACTOR, failed)
-    notice = None
-    if len(results) < TOP_N:
-        notice = f"조건에 맞는 장소가 {len(results)}곳뿐이에요. 찾은 장소만 보여드릴게요."
-    say("날씨·편의시설·후기를 확인해 순위를 정했어요.")
-    return {
-        "max_drive_hours": found["max_drive_hours"],
-        "radius_km": found["radius_km"],
-        "radius_expanded": expanded,
-        "result_cards": results,
-        "notice": notice,
-        "failed_sources": sorted(set(failed)),
-        "elapsed_s": time.monotonic() - t0,
-    }
+def chat_turn(graph: Any, thread_id: str, message: str) -> dict:
+    """Run one user turn (conversation only) and return the public view of the state."""
+    return _view(_invoke(graph, thread_id, message, None))
 
 
 def recommendation_turn(graph: Any, thread_id: str, message: str, prov: Providers) -> dict:
-    """One chat turn: ask-back via LangGraph; when inputs are complete, run the recommendation."""
-    view = chat_turn(graph, thread_id, message)
+    """One chat turn with delegation: ask-back, or re-run the sub-agents in the planned scope."""
+    result = _invoke(graph, thread_id, message, prov)
+    view = _view(result)
     messages: list[str] = [view["reply"]] if view.get("reply") else []
+    if result.get("delegated"):
+        messages += list(result.get("progress") or [])
+        for k in ("result_cards", "max_drive_hours", "radius_km", "radius_expanded",
+                  "failed_sources", "elapsed_s"):
+            view[k] = result.get(k)
     view["messages"] = messages
-    if view["status"] != "ready":
-        return view
-    rec = recommend(
-        prov,
-        age_months=view["baby_age_months"],
-        departure=view["departure_location"],
-        outing_date=view["outing_date"],
-        travels_during_nap=bool(view.get("travels_during_nap")),
-        progress=messages.append,
-    )
-    view.update(rec)
     return view

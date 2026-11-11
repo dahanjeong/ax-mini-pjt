@@ -47,7 +47,8 @@
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `session_id` | string | 이 대화의 세션 ID. 다음 요청에 그대로 보낸다 |
-| `status` | `"ask"` \| `"ready"` | 되묻기 / 추천 완료 |
+| `status` | `"ask"` \| `"ready"` | 되묻기 / 추천 완료 (장소 상세 응답도 `ready`) |
+| `intent` | string | 판정한 의도: `ask`, `new_search`, `change_date`, `change_departure`, `change_age`, `change_preference`, `similar_place`, `no_change`, `place_detail`, `reset`, `out_of_scope` |
 | `reply` | string \| null | 에이전트 응답 문구 (되묻기 질문 등) |
 | `messages` | string[] | 화면에 순서대로 보여줄 메시지 (`reply` + 추천 진행 메시지) |
 | `notice` | string \| null | 안내 문구 (예: 조회 가능한 날짜 안내, 장소가 5곳 미만) |
@@ -58,6 +59,8 @@
 | `travels_during_nap` | boolean \| null | 낮잠 시간에 이동하는지 |
 | `departure_location` | object \| null | 확인된 출발지 (`lat`, `lng` 포함) |
 | `outing_date` | string \| null | 확인된 날짜 (YYYY-MM-DD) |
+| `preference_text` | string \| null | 확인된 취향 문장 |
+| `reference_place` | string \| null | "비슷한 곳" 요청의 기준 장소명 |
 
 ### Response 200 — 추천 필드 (`status: "ready"`일 때만)
 
