@@ -23,7 +23,8 @@ mini-pjt/
 │       │   └── preference.py      # 취향 매칭 (기준 장소 조회 · 프로필 · 임베딩 유사도)
 │       ├── apis/                  # 외부 API 클라이언트
 │       │   ├── kakao.py           # 카카오 로컬 (출발지 · 장소 · 키워드)
-│       │   └── tourapi.py         # TourAPI (장소 · 편의시설 · 개요 · 키워드)
+│       │   ├── tourapi.py         # TourAPI (장소 · 편의시설 · 개요 · 키워드)
+│       │   └── naver.py           # 네이버 검색 (NAVER API HUB: 블로그 · 카페 후기)
 │       ├── tools.py               # 도메인 도구 (외부 API 호출 · 타임아웃 · 실패 기록)
 │       ├── bedrock.py             # Bedrock: Claude(추출 · 판정) · Titan 임베딩
 │       ├── config.py              # .env 로드 · Bedrock 설정

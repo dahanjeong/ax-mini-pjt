@@ -5,7 +5,7 @@ and review agents (fanned out with Send) -> preference matching -> rank.
            │                 ▲       └─▶ match (nothing new to evaluate)
            ├─ environment ─▶ refresh_env (×stored candidates, Send) ─────────▶ match
            └─ rerank ──────────────────────────────────────────────────────▶ match
-    match ─▶ rank ─┬─▶ widen ─▶ search      (full scope, fewer than TOP_N, not widened yet)
+    match ─▶ rank (family-outing order, at most 2 of a kind) ─┬─▶ widen ─▶ search      (full scope, fewer than TOP_N, not widened yet)
                    ├─▶ augment ─▶ evaluate / match
                    │              (preference given, fewer than MIN_HIGH_MATCHES "높음",
                    │               keywords not searched yet)
@@ -32,6 +32,7 @@ from .intent import SCOPE_ENVIRONMENT, SCOPE_FULL
 from .tools import Providers
 
 TOP_N = 5
+MAX_PER_KIND = 2
 MIN_HIGH_MATCHES = 3
 
 MSG_SEARCH = "주변 장소를 찾고 있어요..."
@@ -72,14 +73,33 @@ def merge_place(p: dict, ev: dict) -> dict:
 
 
 def rank_places(places: list[dict]) -> list[dict]:
-    """Safety -> preference -> facilities -> distance."""
+    """Family-outing order: safety -> preference -> outing grade -> age suitability ->
+    facilities -> distance (distance only breaks the last ties: everything is already
+    within the baby's drive radius)."""
     def key(p):
         outdoor_bad = p["indoor_outdoor"] == "outdoor" and p["is_bad_day"]
         match = p.get("preference_match")
         pref = preference.LEVEL_RANK[match["level"]] if match else 0
-        return (outdoor_bad, SUIT_RANK[p["age_suitability"]], pref, -p["facility_count"], p["distance_km"])
+        return (outdoor_bad, pref, place.outing_grade(p), SUIT_RANK[p["age_suitability"]],
+                -p["facility_count"], p["distance_km"])
 
     return sorted(places, key=key)
+
+
+def pick_varied(ranked: list[dict], n: int = TOP_N, per_kind: int = MAX_PER_KIND) -> list[dict]:
+    """Top `n` in rank order with at most `per_kind` of one kind (zoo, kids cafe, museum, ...);
+    when there are not enough other kinds, the skipped ones fill the remaining slots after them."""
+    chosen, skipped, count = [], [], {}
+    for i, p in enumerate(ranked):
+        k = place.kind_of(p)
+        if count.get(k, 0) < per_kind:
+            chosen.append(i)
+            count[k] = count.get(k, 0) + 1
+        else:
+            skipped.append(i)
+        if len(chosen) == n:
+            break
+    return [ranked[i] for i in chosen] + [ranked[i] for i in skipped[:n - len(chosen)]]
 
 
 def _merge_evaluations(old: Optional[dict], new: Optional[dict]) -> dict:
@@ -215,7 +235,7 @@ def build_pipeline(prov: Providers):
     def rank(state: PipelineState) -> dict:
         matches = state.get("matches") or {}
         records = [{**p, "preference_match": matches.get(place_key(p))} for p in state.get("merged") or []]
-        return {"results": rank_places(records)[:TOP_N]}
+        return {"results": pick_varied(rank_places(records))}
 
     def after_rank(state: PipelineState) -> str:
         results = state.get("results") or []

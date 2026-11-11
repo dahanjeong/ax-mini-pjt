@@ -48,7 +48,7 @@ def places():
         tp(1, "가까운곳", 2, description="넓은 잔디밭이 있는 쉼터입니다."),
         tp(2, "공룡관", 3, description="공룡 화석을 전시한 박물관입니다."),
         tp(3, "숲속놀이터", 4, description="숲 속에서 모래 놀이를 할 수 있어요."),
-        tp(4, "워터파크", 9, description="아기 물놀이 시설이 있습니다. 여름에 인기가 많아요."),
+        tp(4, "물놀이장", 9, description="아기 물놀이 시설이 있습니다. 여름에 인기가 많아요."),
         tp(5, "동물농장", 6, description="동물 먹이 주기 체험을 할 수 있습니다."),
         tp(6, "평범한곳", 5, description="주차장이 넓습니다."),
     ]
@@ -78,14 +78,14 @@ def test_vector_store_search_by_owner():
 # ---------------------------------------------------------------- profiles
 
 def test_profile_docs_cover_place_facts_and_skip_failures():
-    p = {"name": "워터파크", "ids": {"tourapi": "T4"}, "types": ["tourapi:28"],
+    p = {"name": "물놀이장", "ids": {"tourapi": "T4"}, "types": ["tourapi:28"],
          "description": "아기 물놀이 시설이 있습니다. 주차 가능.", "indoor_outdoor": "outdoor",
          "facilities": {"nursing_room": {"status": "있음"}, "parking": {"status": "없음"}},
          "review_summary": ["물이 따뜻해요", "정보를 불러오지 못함"]}
     docs = preference.profile_docs(p)
     kinds = [d.kind for d in docs]
     assert kinds == ["category", "description", "description", "setting", "facility", "review"]
-    assert docs[0].text == "워터파크은(는) 레포츠 시설입니다"
+    assert docs[0].text == "물놀이장은(는) 레포츠 시설입니다"
     assert all(d.doc_id.startswith("tourapi:T4#") and d.owner == place_key(p) for d in docs)
     assert "정보를 불러오지 못함" not in [d.text for d in docs]
 
@@ -172,18 +172,18 @@ def test_preference_ranks_after_safety_before_distance():
     with_preference(prov)
     res = recommend(prov, age_months=30, departure=DEP, outing_date=DATE, preference_text="물놀이")
     names = [c["name"] for c in res["result_cards"]]
-    assert names[0] == "워터파크"                      # farthest, but best preference match
+    assert names[0] == "물놀이장"                      # farthest, but best preference match
     assert res["preference_status"] == "ok"
     card = build_card(res["result_cards"][0])
     assert card["preference_match"]["level"] == "높음"
-    assert card["preference_match"]["evidence"][0]["text"].startswith("아기 물놀이")
+    assert any("물놀이" in e["text"] for e in card["preference_match"]["evidence"])
 
 
 def test_safety_still_beats_preference():
-    prov, _ = make_providers(places(), suit={"워터파크": "부적합"})
+    prov, _ = make_providers(places(), suit={"물놀이장": "부적합"})
     with_preference(prov)
     res = recommend(prov, age_months=30, departure=DEP, outing_date=DATE, preference_text="물놀이")
-    assert "워터파크" not in [c["name"] for c in res["result_cards"]]
+    assert "물놀이장" not in [c["name"] for c in res["result_cards"]]
 
 
 def test_without_preference_order_is_unchanged():
@@ -203,7 +203,7 @@ def test_keyword_search_adds_candidates_when_few_strong_matches():
                     preference_text="물놀이", keywords=["물놀이"])
     names = [c["name"] for c in res["result_cards"]]
     assert calls["keyword:물놀이"] == 1
-    assert set(names[:2]) == {"워터파크", "키즈물놀이터"}
+    assert set(names[:2]) == {"물놀이장", "키즈물놀이터"}
 
 
 def test_embedding_failure_falls_back_with_notice():
@@ -248,7 +248,7 @@ def test_preference_follow_up_reranks_with_embeddings_only(chat):
     api.clear()
     v = say("물놀이 할 수 있는 곳 위주로요")
     assert v["intent"] == "change_preference"
-    assert v["result_cards"][0]["name"] == "워터파크"
+    assert v["result_cards"][0]["name"] == "물놀이장"
     assert pcalls["embed"] == 1 and sum(api.values()) == 0
     assert any("취향" in m for m in v["messages"])
 
@@ -259,7 +259,7 @@ def test_date_change_reuses_stored_matches(chat):
     say("물놀이 할 수 있는 곳 위주로요")
     pcalls.clear()
     v = say("모레로 바꿔줘")
-    assert v["intent"] == "change_date" and v["result_cards"][0]["name"] == "워터파크"
+    assert v["intent"] == "change_date" and v["result_cards"][0]["name"] == "물놀이장"
     assert pcalls["embed"] == 0
 
 

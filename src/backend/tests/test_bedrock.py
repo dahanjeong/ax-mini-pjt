@@ -37,6 +37,7 @@ def llm(tool_input, **kw):
 
 
 def test_default_settings_are_sonnet_4_6_in_us_east_1(monkeypatch):
+    monkeypatch.setattr("backend.config.load_env", lambda: None)     # ignore the local .env
     for k in ("BEDROCK_REGION", "BEDROCK_MODEL_ID", "BEDROCK_FAST_MODEL_ID", "BEDROCK_EMBED_MODEL_ID"):
         monkeypatch.delenv(k, raising=False)
     s = bedrock_settings()

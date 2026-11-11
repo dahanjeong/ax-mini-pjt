@@ -10,6 +10,7 @@ preference keywords only, returning places not already known.
 from __future__ import annotations
 
 import math
+import os
 import operator
 import re
 from difflib import SequenceMatcher
@@ -124,19 +125,100 @@ def collect_candidates(prov: Providers, dep: tuple[float, float], radius: float)
             if p and p["distance_km"] <= radius:
                 raw.append(p)
     merged = merge_places(raw)
-    return {"candidates": preselect(merged, radius), "failed_sources": failed}
+    return {"candidates": preselect(group_facilities(merged), radius), "failed_sources": failed}
+
+
+# ---------------------------------------------------------------- one facility, many entries
+
+SAME_FACILITY_KM = 1.0
+MIN_SHARED_PREFIX = 4
+_BRACKETED = re.compile(r"\(.*?\)|\[.*?\]")
+
+
+def _compact(name: str) -> str:
+    return re.sub(r"\s+", "", _BRACKETED.sub(" ", name or ""))
+
+
+def _first_word(name: str) -> str:
+    words = _BRACKETED.sub(" ", name or "").split()
+    return words[0] if words else ""
+
+
+def same_facility(a: dict, b: dict) -> bool:
+    """'서울대공원' / '서울대공원 제1아프리카관': the shared name prefix is a whole first word
+    of one of them (at least MIN_SHARED_PREFIX characters) and they are within 1 km."""
+    ca, cb = _compact(a["name"]), _compact(b["name"])
+    n = 0
+    while n < min(len(ca), len(cb)) and ca[n] == cb[n]:
+        n += 1
+    shared = ca[:n]
+    if len(shared) < MIN_SHARED_PREFIX or shared not in (_first_word(a["name"]), _first_word(b["name"])):
+        return False
+    return haversine_km(a["lat"], a["lng"], b["lat"], b["lng"]) <= SAME_FACILITY_KM
+
+
+def group_facilities(places: list[dict]) -> list[dict]:
+    """Collapse entries of one facility (Kakao lists zoo sections, rides, ... separately)
+    into one candidate; the other names go to `includes`. Representative: the plain
+    facility entry ("서울대공원") if there is one, else the part with the best outing grade
+    once the shared name is removed ("어린이동물원" over "산림욕장"), then the shorter
+    name, then a TourAPI-listed one."""
+    groups: list[list[dict]] = []
+    for p in sorted(places, key=lambda p: p["distance_km"]):
+        for g in groups:
+            if any(same_facility(m, p) for m in g):
+                g.append(p)
+                break
+        else:
+            groups.append([p])
+    out = []
+    for g in groups:
+        rep = _representative(g)
+        out.append({**rep, "includes": [m["name"] for m in g if m is not rep]})
+    return out
+
+
+def _representative(members: list[dict]) -> dict:
+    if len(members) == 1:
+        return members[0]
+    names = [_compact(m["name"]) for m in members]
+    shared = os.path.commonprefix(names)
+    for m, n in zip(members, names):
+        if n == shared:
+            return m
+
+    def key(i):
+        m = members[i]
+        part = {**m, "name": names[i][len(shared):]}
+        return (outing_grade(part), len(names[i]), "tourapi" not in m["place_source"], m["distance_km"])
+
+    return members[min(range(len(members)), key=key)]
 
 
 # ---------------------------------------------------------------- preselection
 
 BAND_EDGES_KM = (0.0, 5.0, 20.0)
-# kind tiers (1 = best outing destination for a baby); first match wins, small parks first
+# Family-outing grade (A = destination, B = half-day, C = everyday) and a kind label used
+# to keep the final picks varied. Checked on the name and the category (Kakao
+# category_name, or the TourAPI cat3 name).
 SMALL_PARK_WORDS = ("근린공원", "소공원", "어린이공원", "쌈지공원")
-TIER1_WORDS = ("테마파크", "테마공원", "동물원", "아쿠아리움", "수목원", "식물원", "자연생태", "과학관",
-               "키즈카페", "워터파크", "희귀동")
-TIER1_NAME_WORDS = ("어린이", "키즈", "유아")
-TIER2_WORDS = ("박물관", "공원", "체험", "호수", "휴양림", "민속마을", "고궁", "생태", "관광농원", "도예촌",
-               "해수욕장", "썰매장")
+GRADE_A_WORDS = ("동물원", "테마파크", "테마공원", "아쿠아리움", "수목원", "식물원", "자연생태", "생태공원",
+                 "습지", "과학관", "관광농원", "농.산.어촌", "체험농장", "워터파크", "대공원", "희귀동")
+GRADE_C_WORDS = ("키즈카페", "방방", "실내놀이터", "트램펄린", "도서관", "갤러리", "화랑", "미술관", "전시관")
+GRADE_B_WORDS = ("박물관", "체험", "호수", "민속마을", "고궁", "공원", "휴양림", "해수욕장", "썰매장", "도예촌",
+                 "생태")
+KIND_WORDS = (   # first match wins
+    ("zoo", ("동물원", "아쿠아리움", "희귀동")),
+    ("kids", ("키즈카페", "방방", "실내놀이터", "트램펄린")),
+    ("themepark", ("테마파크", "테마공원", "워터파크", "대공원", "썰매장")),
+    ("museum", ("과학관", "박물관", "미술관", "전시관", "갤러리", "화랑")),
+    ("experience", ("체험", "관광농원", "농.산.어촌", "도예촌", "민속마을")),
+    ("nature", ("수목원", "식물원", "생태", "습지", "호수", "휴양림", "해수욕장")),
+    ("park", ("공원",)),
+    ("library", ("도서관",)),
+    ("heritage", ("고궁",)),
+)
+
 # TourAPI cat3 codes -> names used by the tiers above (see data/tourapi_categories.json)
 TOUR_CAT3_NAMES = {
     "A01010500": "자연생태관광지", "A01010600": "자연휴양림", "A01010700": "수목원", "A01011200": "해수욕장",
@@ -147,20 +229,44 @@ TOUR_CAT3_NAMES = {
 }
 
 
-def kind_tier(p: dict) -> int:
-    """1 = theme park, zoo, arboretum, science museum, kids places, ...;
-    2 = museum, park, hands-on experience, lake, ...; 3 = library, gallery, small park, other."""
-    name = p.get("name", "")
+def _text(p: dict) -> tuple[str, str]:
     cat = p.get("category", "")
-    cat = TOUR_CAT3_NAMES.get(cat, cat)
+    return p.get("name", ""), TOUR_CAT3_NAMES.get(cat, cat)
+
+
+def outing_grade(p: dict) -> str:
+    """A: zoo, theme park, aquarium, arboretum, wetland/eco park, science museum, farm, big park;
+    B: museum, hands-on experience, lake, folk village, palace, park;
+    C: kids cafe, indoor playground, library, gallery, neighbourhood park, anything else."""
+    name, cat = _text(p)
     text = f"{name} {cat}"
-    if any(w in text for w in SMALL_PARK_WORDS):
-        return 3
-    if any(w in cat or w in name for w in TIER1_WORDS) or any(w in name for w in TIER1_NAME_WORDS)             or "kakao:KIDS" in p.get("types", []):
-        return 1
-    if any(w in text for w in TIER2_WORDS):
-        return 2
-    return 3
+    if "kakao:KIDS" in p.get("types", []) or any(w in text for w in SMALL_PARK_WORDS):
+        return "C"
+    if any(w in text for w in GRADE_A_WORDS):
+        return "A"
+    if any(w in text for w in GRADE_C_WORDS):
+        return "C"
+    if "어린이" in name:
+        return "A"
+    if any(w in text for w in GRADE_B_WORDS):
+        return "B"
+    return "C"
+
+
+def kind_tier(p: dict) -> int:
+    """Preselection tier: 1 / 2 / 3 for outing grade A / B / C."""
+    return {"A": 1, "B": 2, "C": 3}[outing_grade(p)]
+
+
+def kind_of(p: dict) -> str:
+    if "kakao:KIDS" in p.get("types", []):
+        return "kids"
+    name, cat = _text(p)
+    text = f"{name} {cat}"
+    for kind, words in KIND_WORDS:
+        if any(w in text for w in words):
+            return kind
+    return "other"
 
 
 def preselect(places: list[dict], radius: float, n: int = PRESELECT_N) -> list[dict]:

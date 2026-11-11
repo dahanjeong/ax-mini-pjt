@@ -15,7 +15,7 @@ from .constants import FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, SUIT_RANK, UNKNO
 CARD_FIELDS = (
     "name", "distance_km", "indoor_outdoor", "age_suitability", "facilities",
     "weather", "dust", "is_bad_day", "warnings", "review_summary", "failed_sources",
-    "preference_match",
+    "preference_match", "includes",
 )
 MATCH_LEVELS = ("높음", "보통", "낮음")
 FACILITY_LABELS = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
@@ -122,6 +122,7 @@ def build_card(place: dict) -> dict:
         "review_summary": summary,
         "failed_sources": list(place.get("failed_sources") or []),
         "preference_match": _preference_match(place.get("preference_match")),
+        "includes": [str(n) for n in place.get("includes") or []],
     }
 
 

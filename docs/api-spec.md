@@ -146,6 +146,7 @@
 | `warnings` | string[] | 경고 문구 (나쁜 날의 야외 장소) |
 | `review_summary` | string[] | 후기 3줄 요약 (없으면 `["후기 정보 없음"]`) |
 | `failed_sources` | string[] | 이 장소에서 실패한 외부 API |
+| `includes` | string[] | 같은 시설로 묶인 세부 장소 이름 (예: 서울대공원의 어린이동물원·제1아프리카관). 없으면 `[]` |
 | `preference_match` | object \| null | 취향을 말한 경우 `{level: "높음"\|"보통"\|"낮음", evidence: [{doc_id, text}]}` (근거 문장 최대 2개). 취향이 없으면 `null` |
 
 ### 오류
