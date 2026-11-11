@@ -100,43 +100,52 @@ class BedrockLLM:
         return {"judge": self.settings.judge_models, "extract": self.settings.extract_models,
                 "classify": self.settings.classify_models}[task]
 
-    def _tool_call(self, *, task: str, system: str, user: str, tool: dict) -> dict:
+    def _tool_call(self, *, task: str, system: str, user: str, tool: dict, max_tokens: int = MAX_TOKENS) -> dict:
         last: Optional[Exception] = None
         for region, model in self._chain(task):
             try:
                 return self._on_model(region=region, model=model, limit=MAX_CONCURRENT[task],
-                                      system=system, user=user, tool=tool)
+                                      system=system, user=user, tool=tool, max_tokens=max_tokens)
             except Exception as e:
                 if not _rate_limited(e):
                     raise
                 last = e                                      # quota / throttling: next model
         raise LLMUnavailable(f"every {task} model is rate limited: {last}")
 
-    def _on_model(self, *, region: str, model: str, limit: int, system: str, user: str, tool: dict) -> dict:
+    def _on_model(self, *, region: str, model: str, limit: int, system: str, user: str, tool: dict,
+                  max_tokens: int = MAX_TOKENS) -> dict:
         slot = _slot(f"{region}/{model}", limit)
         if not slot.acquire(timeout=QUEUE_TIMEOUT_S):
             raise LLMBusy(f"no free slot for {model} within {QUEUE_TIMEOUT_S}s")
         try:
-            return self._call(client=self._client_for(region), model=model, system=system, user=user, tool=tool)
+            return self._call(client=self._client_for(region), model=model, system=system, user=user, tool=tool,
+                              max_tokens=max_tokens)
         finally:
             slot.release()
 
-    def _call(self, *, client: Any, model: str, system: str, user: str, tool: dict) -> dict:
+    def _call(self, *, client: Any, model: str, system: str, user: str, tool: dict,
+              max_tokens: int = MAX_TOKENS) -> dict:
         response = client.messages.create(
             model=model,
-            max_tokens=MAX_TOKENS,
+            max_tokens=max_tokens,
             system=system,
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
             messages=[{"role": "user", "content": user}],
             extra_body={"temperature": TEMPERATURE},          # SDK 1.x has no `temperature` argument
         )
+        if response.stop_reason == "max_tokens":
+            raise ValueError(f"{tool['name']} answer was cut off at max_tokens={max_tokens}")
         if response.stop_reason == "refusal":
             raise LLMRefusal(getattr(response, "stop_details", None))
         for block in response.content:
             if block.type == "tool_use" and block.name == tool["name"]:
                 return dict(block.input)
         raise ValueError(f"no {tool['name']} call in the response (stop_reason={response.stop_reason})")
+
+    # general structured call on the judge (Sonnet) chain, e.g. the evaluation grader
+    def call_tool(self, *, system: str, user: str, tool: dict, max_tokens: int = MAX_TOKENS) -> dict:
+        return self._tool_call(task="judge", system=system, user=user, tool=tool, max_tokens=max_tokens)
 
     # Deps.extractor(message, awaiting) -> partial dict
     def extract(self, message: str, awaiting: Optional[str]) -> dict:

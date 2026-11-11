@@ -273,3 +273,12 @@ def test_other_errors_do_not_fall_back(fresh_slots):
     with pytest.raises(RuntimeError):
         model.judge({"name": "x"}, 30, [])
     assert msgs.models == [DEFAULT_JUDGE_MODELS[0][1]]
+
+
+def test_answer_cut_off_at_max_tokens_is_an_error():
+    model, msgs = llm({"age_suitability": "적합"}, stop_reason="max_tokens")
+    with pytest.raises(ValueError):
+        model.judge({"name": "x"}, 30, [])
+    model, msgs = llm({"traits": [], "forbidden": []})
+    model.call_tool(system="s", user="u", tool={"name": "record_grades", "input_schema": {}}, max_tokens=4096)
+    assert msgs.calls[-1]["max_tokens"] == 4096

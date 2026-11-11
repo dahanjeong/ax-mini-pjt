@@ -22,7 +22,7 @@
 
 ## 인-아웃 세트 통과율 (자체 평가)
 인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (20건, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
-- 1차 (Day 9 종료): XX / XX 통과 — [evaluation/round1_report.md](evaluation/round1_report.md)
+- 1차 (Day 9 종료): 12 / 20 통과 — [evaluation/round1_report.md](evaluation/round1_report.md)
 - 2차 (Day 10 개선 후): XX / XX 통과 — [evaluation/round2_report.md](evaluation/round2_report.md)
 - 개선폭: +XX 건 (주요 개선 사항: ...)
 

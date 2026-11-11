@@ -35,6 +35,22 @@ UTF-8(BOM 포함)로 저장해 엑셀에서도 한글이 깨지지 않는다. �
 
 입력 추출 LLM(`extractor`)은 매 메시지마다 호출되므로 `expected_tools`에 따로 적지 않는다.
 
+## 실행과 채점 (`evaluation/run_eval.py`)
+
+```bash
+python evaluation/run_eval.py --round 1                 # 전체 → results/round1.json + round1_report.md
+python evaluation/run_eval.py --round 1 --ids 1,9       # 일부만 다시 실행해 해당 차수 결과에 합침
+python evaluation/run_eval.py --round 1 --ids 1 --dry   # 출력만, 파일 저장 없음
+python evaluation/run_eval.py --round 1 --report-only   # 저장된 결과로 보고서만 다시 생성
+```
+
+실제 연동 서비스(Bedrock·카카오·TourAPI·네이버·기상청·에어코리아)를 호출하므로 비용과 공공데이터 호출 한도를 쓴다.
+
+케이스마다 새 세션으로 턴을 차례로 보내고, **마지막 턴**을 채점한다.
+- **도구 검사 (규칙):** `expected_tools`가 모두 호출돼야 한다. 그 밖의 호출은 보조 도구(`llm_indoor_outdoor`, `keyword_search`, `embed`)만 허용한다. 비어 있으면 외부 호출이 없어야 한다.
+- **응답 검사 (LLM 채점, Sonnet):** 사용자가 보는 응답(메시지·안내·후보·카드)을 텍스트로 펼쳐 `expected_traits` 항목별 충족 여부와 `forbidden` 항목별 위반 여부를 근거와 함께 판정한다. 채점 응답에 빠진 항목이 있으면 다시 채점한다(최대 3번).
+- **통과:** 모든 기대 항목 충족 + 금지 항목 위반 없음 + 도구 검사 통과. 판정은 채점 LLM의 총평이 아니라 스크립트가 내린다.
+
 ## 자체 평가 결과
-- 1차: `evaluation/round1_report.md` (예정)
+- 1차: [evaluation/round1_report.md](../evaluation/round1_report.md) — **12 / 20** (positive 3/8, negative 4/4, edge 3/5, guardrail 2/3)
 - 2차: `evaluation/round2_report.md` (예정)
