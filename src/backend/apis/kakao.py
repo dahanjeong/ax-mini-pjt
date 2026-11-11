@@ -1,6 +1,7 @@
 """Kakao Local API (https://dapi.kakao.com, header `Authorization: KakaoAK <REST key>`).
 
 - geocode(query)                          departure lookup for the supervisor
+- region(lat, lng)                        (시도, 시군구) for the fine-dust forecast region
 - category_search(lat, lng, radius_km)    Providers.kakao_search: AT4 관광명소 / CT1 문화시설
                                            + keyword searches for parks, kids cafes and zoos
                                            (Kakao files parks outside AT4/CT1), filtered
@@ -72,6 +73,14 @@ class KakaoClient:
             if not any(haversine_km(h["lat"], h["lng"], d["lat"], d["lng"]) <= SAME_PLACE_KM for d in distinct):
                 distinct.append(h)
         return distinct[:MAX_GEOCODE_CANDIDATES]
+
+    def region(self, lat: float, lng: float) -> tuple[str, str]:
+        """(시도, 시군구) of a point, e.g. ('경기도', '가평군') - administrative ('H') region."""
+        docs = self._get("/v2/local/geo/coord2regioncode.json", {"x": lng, "y": lat}).get("documents") or []
+        doc = next((d for d in docs if d.get("region_type") == "H"), docs[0] if docs else None)
+        if not doc:
+            raise ValueError(f"no region for {lat},{lng}")
+        return doc.get("region_1depth_name", ""), doc.get("region_2depth_name", "")
 
     # ---------------------------------------------------------------- places
 

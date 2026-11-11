@@ -145,3 +145,12 @@ def test_missing_key_is_reported(monkeypatch):
     monkeypatch.delenv("KAKAO_KEY", raising=False)
     with pytest.raises(RuntimeError):
         KakaoClient()
+
+
+def test_region_prefers_the_administrative_region():
+    docs = [{"region_type": "B", "region_1depth_name": "경기도", "region_2depth_name": "가평군 설악면"},
+            {"region_type": "H", "region_1depth_name": "경기도", "region_2depth_name": "가평군"}]
+    k, seen = client(lambda r: json({"documents": docs}))
+    assert k.region(37.75, 127.45) == ("경기도", "가평군")
+    assert seen[0].url.path == "/v2/local/geo/coord2regioncode.json"
+    assert (seen[0].url.params["x"], seen[0].url.params["y"]) == ("127.45", "37.75")
