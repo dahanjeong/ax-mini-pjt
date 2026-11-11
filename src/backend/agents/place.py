@@ -30,7 +30,7 @@ MAX_KEYWORDS = 3
 MERGE_RATIO = 0.8
 MERGE_METERS = 100.0
 
-ALLOWED_TYPES = {"tourapi:12", "tourapi:14", "tourapi:28", "kakao:CT1", "kakao:AT4"}
+ALLOWED_TYPES = {"tourapi:12", "tourapi:14", "tourapi:28", "kakao:CT1", "kakao:AT4", "kakao:PARK", "kakao:KIDS"}
 
 
 def max_drive_hours(age_months: int, travels_during_nap: bool) -> float:

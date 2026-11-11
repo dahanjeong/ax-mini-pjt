@@ -21,7 +21,8 @@ from ..tools import Providers, guarded
 MAX_REVIEWS = 10
 MIN_REVIEWS = 3
 SUMMARY_LINES = 3
-INDOOR_RULE = {"tourapi:14": "indoor", "kakao:CT1": "indoor"}  # others are ambiguous -> LLM
+# category rule first; types not listed are ambiguous -> LLM
+INDOOR_RULE = {"tourapi:14": "indoor", "kakao:CT1": "indoor", "kakao:KIDS": "indoor", "kakao:PARK": "outdoor"}
 
 
 def indoor_by_rule(place: dict):

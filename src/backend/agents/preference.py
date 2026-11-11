@@ -38,7 +38,7 @@ LEVEL_RANK = {"높음": 0, "보통": 1, "낮음": 2}
 
 CATEGORY_LABELS = {
     "tourapi:12": "관광지", "tourapi:14": "문화시설", "tourapi:28": "레포츠 시설",
-    "kakao:CT1": "문화시설", "kakao:AT4": "관광명소",
+    "kakao:CT1": "문화시설", "kakao:AT4": "관광명소", "kakao:PARK": "공원", "kakao:KIDS": "키즈카페",
 }
 FACILITY_TEXT = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
 
