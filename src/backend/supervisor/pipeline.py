@@ -38,7 +38,7 @@ from langgraph.types import Send
 
 from ..agents import environment, place, preference, review
 from ..agents import candidates
-from ..agents.candidates import place_key
+from ..agents.candidates import excluded_by, matches_kind, place_key, search_words
 from ..core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, FACILITY_KEYS, SUIT_RANK
 from .intent import SCOPE_ENVIRONMENT, SCOPE_FULL
 from ..tools import Providers, guarded
@@ -55,6 +55,7 @@ MSG_WIDEN = "후보가 부족해 검색 반경을 1.5배로 넓혀 다시 찾고
 MSG_REFRESH = "바뀐 날짜의 날씨·미세먼지를 다시 확인하고 있어요..."
 MSG_MATCH = "말씀하신 취향과 장소 설명·후기를 비교하고 있어요..."
 MSG_AUGMENT = "취향에 잘 맞는 곳이 부족해 취향 키워드로 더 찾고 있어요..."
+MSG_INCLUDE = "말씀하신 {terms} 장소가 후보에 없어 더 찾고 있어요..."
 MSG_DRIVE = "추천 후보의 실제 차량 이동시간을 확인하고 있어요..."
 MSG_DONE ="날씨·편의시설·후기를 확인해 순위를 정했어요."
 NOTICE_NO_MATCH = "취향 매칭을 하지 못해 기본 순위로 보여드려요."
@@ -139,8 +140,30 @@ def drive_status(minutes: Optional[float], limit_min: float, departure_time: str
     return {"status": DRIVE_CONFIRMED, "minutes": minutes, "departure_time": departure_time}
 
 
+def pick_including(ranked: list[dict], include: list[str], n: int = TOP_N,
+                   per_kind: int = MAX_PER_KIND) -> list[dict]:
+    """`pick_varied`, then for each kind the user asked to add ("물놀이 장소도 추천해주세요")
+    that is not in the picks: its best-ranked places (up to `per_kind`) replace the lowest picks
+    that are not themselves an asked-for kind. The result stays in rank order."""
+    picks = pick_varied(ranked, n, per_kind)
+    for term in include or []:
+        if any(matches_kind(p, term) for p in picks):
+            continue
+        keys = {place_key(p) for p in picks}
+        extra = [p for p in ranked if matches_kind(p, term) and place_key(p) not in keys][:per_kind]
+        if not extra:
+            continue
+        keep = [p for p in picks if any(matches_kind(p, t) for t in include)]
+        rest = [p for p in picks if p not in keep]
+        picks = keep + rest[:max(0, n - len(keep) - len(extra))] + extra
+        order = {place_key(p): i for i, p in enumerate(ranked)}
+        picks.sort(key=lambda p: order[place_key(p)])
+    return picks
+
+
 def pick_with_drive_check(ranked: list[dict], *, departure: dict, max_drive_hours: float,
                           departure_time: datetime, drive_times: dict, drive_minutes: Optional[Callable],
+                          include: Optional[list[str]] = None,
                           max_checks: int = MAX_DRIVE_CHECKS) -> tuple[list[dict], dict, list[str], int]:
     """`pick_varied`, checking the picks' expected car travel time when leaving at
     `departure_time` (future traffic): a pick over the limit is dropped and the next one
@@ -174,7 +197,7 @@ def pick_with_drive_check(ranked: list[dict], *, departure: dict, max_drive_hour
 
     while True:
         can_check = drive_minutes is not None and calls < max_checks
-        picks = pick_varied([p for p in ranked if allowed(p, can_check)])
+        picks = pick_including([p for p in ranked if allowed(p, can_check)], include or [])
         todo = [p for p in picks if dk(p) not in times][:max_checks - calls]
         if not can_check or not todo:
             break
@@ -206,6 +229,10 @@ class PipelineState(TypedDict, total=False):
     preference_text: Optional[str]
     reference: Optional[dict]                    # resolved reference place {"name", "profile"}
     keywords: list[str]                          # preference keywords for the extra search
+    exclude: list[str]                           # kinds / place names to leave out of the list
+    include: list[str]                           # kinds to add to the list ("물놀이도 추천해주세요")
+    include_searched: list[str]                  # search words already used for `include`
+    excluded_count: int                          # places dropped by `exclude` in the last match
     # stored from an earlier turn (non-full scopes)
     candidates: list[dict]
     evaluations: Annotated[dict, _merge_evaluations]   # place_key -> environment/review results
@@ -247,6 +274,30 @@ def _wants_preference(state: PipelineState) -> bool:
 
 def _query_id(state: PipelineState) -> list:
     return [state.get("preference_text"), (state.get("reference") or {}).get("name")]
+
+
+def _search_keywords(state: PipelineState) -> list[str]:
+    """Preference keywords for the extra search, minus anything the user excluded."""
+    from .intent import is_excluded_keyword
+    return [k for k in state.get("keywords") or [] if not is_excluded_keyword(k, state.get("exclude") or [])]
+
+
+def _missing_inclusions(state: PipelineState) -> list[str]:
+    """Kinds the user asked to add that are still not in the results."""
+    results = state.get("results") or []
+    return [t for t in state.get("include") or [] if not any(matches_kind(p, t) for p in results)]
+
+
+def _augment_keywords(state: PipelineState) -> tuple[list[str], list[str]]:
+    """(search words for asked-for kinds not found yet, preference keywords) still to search."""
+    searched = set(state.get("include_searched") or [])
+    inc = [w for t in _missing_inclusions(state) for w in search_words(t) if w not in searched]
+    results = state.get("results") or []
+    high = sum(1 for p in results if (p.get("preference_match") or {}).get("level") == "높음")
+    keywords = _search_keywords(state)
+    pref = keywords if (state.get("preference_status") == "ok" and high < MIN_HIGH_MATCHES and keywords
+                        and keywords != (state.get("keywords_searched") or [])) else []
+    return inc, pref
 
 
 def build_pipeline(prov: Providers):
@@ -303,12 +354,15 @@ def build_pipeline(prov: Providers):
         merged = [merge_place(p, evals[place_key(p)])
                   for p in state.get("candidates") or [] if place_key(p) in evals]
         merged = [p for p in merged if p["age_suitability"] != "부적합"]
+        before = len(merged)
+        merged = [p for p in merged if not excluded_by(p, state.get("exclude") or [])]
+        excluded = {"excluded_count": before - len(merged)}
         if not _wants_preference(state):
-            return {"merged": merged, "matches": {}, "match_query": None, "preference_status": "off"}
+            return {"merged": merged, "matches": {}, "match_query": None, "preference_status": "off", **excluded}
         stored = state.get("matches") or {}
         if (state.get("match_query") == _query_id(state) and state.get("preference_status") == "ok"
                 and all(place_key(p) in stored for p in merged)):
-            return {"merged": merged}                     # nothing new to match
+            return {"merged": merged, **excluded}         # nothing new to match
         out = preference.run(sub.preference, places=merged, preference_text=state.get("preference_text"),
                              reference=state.get("reference"))
         return {
@@ -318,6 +372,7 @@ def build_pipeline(prov: Providers):
             "preference_status": out["status"] if out["status"] != "skipped" else "off",
             "messages": [MSG_MATCH] if out["status"] == "ok" else [],
             "failed_sources": out["failed_sources"],
+            **excluded,
         }
 
     def rank(state: PipelineState) -> dict:
@@ -328,19 +383,18 @@ def build_pipeline(prov: Providers):
         picks, times, failed, calls = pick_with_drive_check(
             rank_places(records), departure=state["departure"], max_drive_hours=hours,
             departure_time=departure_time_for(state["outing_date"], departure_time=state.get("departure_time")),
-            drive_times=state.get("drive_times") or {}, drive_minutes=prov.drive_minutes)
+            drive_times=state.get("drive_times") or {}, drive_minutes=prov.drive_minutes,
+            include=state.get("include") or [])
         return {"results": picks, "drive_times": times, "failed_sources": failed,
                 "messages": [MSG_DRIVE] if calls else []}
 
     def after_rank(state: PipelineState) -> str:
         results = state.get("results") or []
-        if (state.get("scope", SCOPE_FULL) == SCOPE_FULL and len(results) < TOP_N
-                and not state.get("radius_expanded")):
-            return "widen"
-        high = sum(1 for p in results if (p.get("preference_match") or {}).get("level") == "높음")
-        keywords = state.get("keywords") or []
-        if (state.get("preference_status") == "ok" and high < MIN_HIGH_MATCHES and keywords
-                and keywords != (state.get("keywords_searched") or []) and prov.keyword_search is not None):
+        if len(results) < TOP_N and not state.get("radius_expanded") and (
+                state.get("scope", SCOPE_FULL) == SCOPE_FULL or state.get("excluded_count")):
+            return "widen"                               # too few, also after leaving places out
+        inc_words, pref_words = _augment_keywords(state)
+        if (inc_words or pref_words) and prov.keyword_search is not None:
             return "augment"
         return "finish"
 
@@ -348,16 +402,23 @@ def build_pipeline(prov: Providers):
         return {"radius_scale": place.WIDEN_FACTOR, "radius_expanded": True, "messages": [MSG_WIDEN]}
 
     def augment(state: PipelineState) -> dict:
+        inc_words, pref_words = _augment_keywords(state)
         found = place.run(sub.place, departure=state["departure"], age_months=state["age_months"],
                           travels_during_nap=bool(state.get("travels_during_nap")),
                           radius_scale=state.get("radius_scale", 1.0),
-                          keywords=state["keywords"], exclude=state.get("candidates") or [])
-        return {
+                          keywords=inc_words + pref_words, exclude=state.get("candidates") or [])
+        out = {
             "candidates": list(state.get("candidates") or []) + found["candidates"],
-            "keywords_searched": list(state["keywords"]),
             "failed_sources": found["failed_sources"],
-            "messages": [MSG_AUGMENT],
+            "messages": [],
         }
+        if inc_words:
+            out["include_searched"] = list(state.get("include_searched") or []) + inc_words
+            out["messages"].append(MSG_INCLUDE.format(terms="·".join(_missing_inclusions(state))))
+        if pref_words:
+            out["keywords_searched"] = _search_keywords(state)
+            out["messages"].append(MSG_AUGMENT)
+        return out
 
     def finish(state: PipelineState) -> dict:
         n = len(state.get("results") or [])
@@ -366,6 +427,10 @@ def build_pipeline(prov: Providers):
             notices.append(f"조건에 맞는 장소가 {n}곳뿐이에요. 찾은 장소만 보여드릴게요.")
         if _wants_preference(state) and state.get("preference_status") in ("unavailable", "failed"):
             notices.append(NOTICE_NO_MATCH)
+        for t in _missing_inclusions(state):
+            notices.append(f"반경 안에서 {t} 장소를 찾지 못했어요.")
+        if state.get("excluded_count"):
+            notices.append(f"제외 조건({', '.join(state.get('exclude') or [])})에 해당하는 곳은 빼고 골랐어요.")
         return {"notice": " ".join(notices) or None, "messages": [MSG_DONE]}
 
     g = StateGraph(PipelineState)
@@ -385,13 +450,14 @@ def build_pipeline(prov: Providers):
     return g.compile()
 
 
-_STORED_KEYS = ("candidates", "evaluations", "matches", "match_query", "keywords_searched",
+_STORED_KEYS = ("candidates", "evaluations", "matches", "match_query", "keywords_searched", "include_searched",
                 "drive_times", "preference_status", "max_drive_hours", "radius_km", "radius_expanded")
 
 
 def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int, outing_date: str,
                  departure_time: Optional[str] = None, travels_during_nap: bool = False, preference_text: Optional[str] = None,
                  reference: Optional[dict] = None, keywords: Optional[list[str]] = None,
+                 exclude: Optional[list[str]] = None, include: Optional[list[str]] = None,
                  stored: Optional[dict] = None) -> dict:
     """Run the pipeline. `stored` = what the last run returned under `_STORED_KEYS`
     (ignored for the full scope)."""
@@ -408,6 +474,9 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
         "preference_text": preference_text,
         "reference": reference,
         "keywords": list(keywords or []),
+        "exclude": list(exclude or []),
+        "include": [t for t in include or [] if t not in (exclude or [])],
+        "include_searched": stored.get("include_searched") or [],
         "candidates": stored.get("candidates") or [],
         "evaluations": stored.get("evaluations") or {},
         "matches": stored.get("matches") or {},
@@ -437,6 +506,7 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
         "matches": s.get("matches") or {},
         "match_query": s.get("match_query"),
         "keywords_searched": s.get("keywords_searched") or [],
+        "include_searched": s.get("include_searched") or [],
         "drive_times": s.get("drive_times") or {},
     }
 
@@ -462,6 +532,6 @@ def recommend(
         for m in out["messages"]:
             progress(m)
     for k in ("messages", "candidates", "evaluations", "matches", "match_query", "keywords_searched",
-              "drive_times"):
+              "include_searched", "drive_times"):
         out.pop(k)
     return out

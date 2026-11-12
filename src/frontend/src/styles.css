@@ -15,6 +15,9 @@
   --tile-edge: 5px;
 }
 
+/* scrollIntoView clears the sticky top bar and composer */
+html { scroll-padding-bottom: calc(var(--control) + var(--space-sm) + var(--space-md) + var(--space-md)); }
+
 body {
   background: var(--grain), var(--fibre), var(--color-paper);
   word-break: keep-all;
@@ -313,7 +316,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .drive { color: var(--color-ink-2); }
 .drive-basis { color: var(--color-muted); }
-.drive::before { content: "·"; margin-inline-end: var(--space-xs); color: var(--color-muted); }
 .drive-unverified {
   background: color-mix(in oklab, var(--color-sand) 40%, var(--color-card));
   color: var(--color-ink);

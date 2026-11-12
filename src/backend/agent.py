@@ -34,6 +34,8 @@ from .supervisor.intent import (
     _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, NOW, SCOPE_FULL, _NonNumeric,
     classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference, parse_time,
     parse_reference, plan_scope, preference_keywords, search_snapshot,
+    EXCLUDE_VERB, is_excluded_keyword, is_kind_word, normalize_exclusion, parse_exclusions, parse_inclusions,
+    strip_exclusions,
 )
 from .agents import preference as preference_agent
 from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED
@@ -53,10 +55,12 @@ DateRangeFn = Callable[[date], tuple[date, date]]
 ExtractorFn = Callable[[str, Optional[str]], dict]
 
 _SLOT_KEYS = ("baby_age_months", "travels_during_nap", "outing_date", "departure_time", "departure_query",
-              "departure_location", "preference_text", "preference_keywords", "reference_place")
+              "departure_location", "preference_text", "preference_keywords", "reference_place",
+              "exclude_keywords", "include_keywords")
 _RESULT_KEYS = ("candidates", "evaluations", "result_cards", "max_drive_hours", "radius_km",
                 "radius_expanded", "failed_sources", "elapsed_s", "searched", "matches",
-                "match_query", "keywords_searched", "drive_times", "preference_status", "reference",
+                "match_query", "keywords_searched", "include_searched", "drive_times", "preference_status",
+                "reference",
                 "reference_candidates", "reference_chosen")
 _CANCEL = re.compile(r"없음|없어요|취소|됐어|괜찮|상관\s*없")
 
@@ -68,6 +72,8 @@ INTENT_REPLY = {
     "change_age": "월령·낮잠 조건이 바뀌어서 이동 반경과 적합도를 다시 확인할게요.",
     "change_date": "날짜를 {date}로 바꿔서 날씨·미세먼지와 이동시간을 다시 확인할게요.",
     "change_time": "출발 시각을 {time}으로 바꿔서 이동시간만 다시 확인할게요.",
+    "change_exclusion": "말씀하신 제외 조건({excl})에 해당하는 곳은 빼고 다시 골라 드릴게요.",
+    "change_inclusion": "말씀하신 {incl} 장소를 목록에 넣어 다시 골라 드릴게요.",
     "change_preference": "말씀하신 취향을 반영해 순위를 다시 정할게요.",
     "similar_place": "'{ref}'와 비슷한 곳을 기준으로 순위를 다시 정할게요.",
     "no_change": "조건이 그대로라 이전 추천을 다시 보여드릴게요.",
@@ -101,6 +107,8 @@ class ChatState(TypedDict, total=False):
     # optional inputs
     preference_text: Optional[str]
     preference_keywords: Optional[list]
+    exclude_keywords: Optional[list]         # kinds / names left out of the list ("물놀이"), until reset
+    include_keywords: Optional[list]         # kinds asked to be added to the list ("물놀이도 추천해주세요")
     reference_place: Optional[str]           # name as the user said it
     reference: Optional[dict]                # resolved: {"query", "name", "profile": [sentences]}
     reference_candidates: list               # ambiguous lookup: [{"name", "address", "raw"}]
@@ -133,6 +141,7 @@ class ChatState(TypedDict, total=False):
     match_query: Optional[list]
     keywords_searched: list
     drive_times: dict
+    include_searched: list
     preference_status: Optional[str]
 
 
@@ -192,6 +201,31 @@ def _card_text(i: int, c: dict) -> str:
         ev = " / ".join(e["text"] for e in m.get("evidence") or []) or "근거 문장 없음"
         lines.append(f"취향 일치: {m['level']} (근거: {ev})")
     return "\n".join(lines)
+
+
+def _excluded_places(text: str, llm_terms: list, cards: list[dict]) -> tuple[list[str], list[str]]:
+    """Names of recommended places the user asks to leave out: a card name (or a 4+ letter
+    part of it: "어린이대공원" -> 서울어린이대공원) mentioned together with an exclusion word,
+    or named by the LLM extractor's exclude_keywords. Also returns the words of `text` that
+    named them, so they are not read as a preference."""
+    flat = re.sub(r"\s+", "", text)
+    terms = [re.sub(r"\s+", "", str(t)) for t in llm_terms]
+    has_verb = bool(EXCLUDE_VERB.search(text))
+    words = [re.sub(r"(?:에서|이랑|을|를|은|는|가|도|에|랑)$", "", w) for w in re.findall(r"[가-힣A-Za-z0-9]+", text)]
+    out: list[str] = []
+    said: list[str] = []
+    for c in cards:
+        name = str(c.get("name") or "")
+        key = re.sub(r"\s+", "", name)
+        if len(key) < 2 or name in out:
+            continue
+        # a kind word ("물놀이장") means the kind, even when a card name contains it
+        parts = [w for w in words if len(w) >= 4 and w in key and not is_kind_word(w)] if has_verb else []
+        if (has_verb and key in flat) or parts or any(
+                len(t) >= 3 and (t in key or key in t) and not is_kind_word(t) for t in terms):
+            out.append(name)
+            said += [name] + parts
+    return out, said
 
 
 def _pick(text: str, cands: list[dict]) -> Optional[dict]:
@@ -310,18 +344,54 @@ def build_graph(deps: Deps):
                 out.update({"reference_place": None, "reference": None, "reference_candidates": []})
                 return out
 
+        # ---- exclusions ("물놀이장소는 빼주세요"): rules + LLM, kept until reset; never a preference.
+        # A recommended place named with an exclusion word ("서울어린이대공원은 빼주세요") is left out
+        # by its own name, not generalized to its kind ("공원").
+        named, named_words = _excluded_places(text, llm.get("exclude_keywords") or [], state.get("result_cards") or [])
+        new_excl = list(named)
+        place_text = "".join(re.sub(r"\s+", "", n) for n in named)
+        for t in parse_exclusions(text) + [normalize_exclusion(str(k)) for k in llm.get("exclude_keywords") or []
+                                           if re.sub(r"\s+", "", str(k)) not in place_text]:
+            if t and t not in new_excl and t not in place_text:
+                new_excl.append(t)
+        new_incl: list[str] = []
+        for t in parse_inclusions(text) + [normalize_exclusion(str(k)) for k in llm.get("include_keywords") or []]:
+            if t and t not in new_incl and t not in new_excl:
+                new_incl.append(t)
+        # a kind asked for again is no longer left out, and one left out is no longer asked for
+        old_excl = list(state.get("exclude_keywords") or [])
+        old_incl = list(state.get("include_keywords") or [])
+        exclusions = [t for t in old_excl if t not in new_incl] + [t for t in new_excl if t not in old_excl]
+        inclusions = [t for t in old_incl if t not in new_excl] + [t for t in new_incl if t not in old_incl]
+        if exclusions != old_excl:
+            out["exclude_keywords"] = exclusions
+        if inclusions != old_incl:
+            out["include_keywords"] = inclusions
+
         # ---- preference / reference place (optional; LLM first, rule fallback)
         pref = llm.get("preference_text") if isinstance(llm.get("preference_text"), str) else None
         ref = llm.get("reference_place") if isinstance(llm.get("reference_place"), str) else None
         kws = llm.get("preference_keywords") if isinstance(llm.get("preference_keywords"), list) else None
+        def without_exclusions(s: str) -> str:
+            for name in named_words:             # excluded place names are not preferences ("…대공원")
+                s = s.replace(name, " ")
+            return strip_exclusions(s)
+
         if not llm and awaiting not in ("departure", "departure_choice"):
             ref = parse_reference(text)
-            pref = None if ref else parse_preference(text)
+            pref = None if ref else parse_preference(without_exclusions(text))
+        if pref and (new_excl or new_incl):      # "물놀이장소는 제외" / "물놀이 장소도" edit the list,
+            rest = without_exclusions(pref)      # they are not a mood to rank everything by
+            listed = new_excl + new_incl
+            words = preference_keywords(rest)
+            pref = rest if parse_preference(rest) and not (
+                words and all(normalize_exclusion(w) in listed for w in words)) else None
         if ref and ref.strip() != state.get("reference_place"):
             out.update({"reference_place": ref.strip(), "reference": None, "reference_chosen": None})
         if pref:
             out["preference_text"] = pref.strip()
-            out["preference_keywords"] = [str(k) for k in kws][:3] if kws else preference_keywords(pref)
+            kws = [str(k) for k in kws][:3] if kws else preference_keywords(pref)
+            out["preference_keywords"] = [k for k in kws if not is_excluded_keyword(k, exclusions)]
 
         # ---- departure
         candidates = state.get("departure_candidates") or []
@@ -489,7 +559,8 @@ def build_graph(deps: Deps):
                 + "대략 언제쯤 출발할 예정이신가요? (예: 오전 9시, 10시 반, 오후 2시)",
             }
         now = deps.now()
-        if state.get("outing_date") == now.strftime("%Y-%m-%d") and raw < now.strftime("%H:%M"):
+        # "today" comes from deps.today() like every other date check (tests pin it)
+        if state.get("outing_date") == _fmt(deps.today()) and raw < now.strftime("%H:%M"):
             return {
                 "awaiting": "time",
                 "departure_time": None,
@@ -547,7 +618,9 @@ def build_graph(deps: Deps):
         if scope != SCOPE_FULL and not state.get("candidates"):
             intent, scope = "new_search", SCOPE_FULL
         reply = INTENT_REPLY[intent].format(date=state.get("outing_date"), ref=state.get("reference_place"),
-                                            time=state.get("departure_time"))
+                                            time=state.get("departure_time"),
+                                            excl=", ".join(state.get("exclude_keywords") or []),
+                                            incl="·".join(state.get("include_keywords") or []))
         return {
             "status": "ready",
             "intent": intent,
@@ -569,6 +642,8 @@ def build_graph(deps: Deps):
             travels_during_nap=bool(state.get("travels_during_nap")),
             preference_text=state.get("preference_text"), reference=state.get("reference"),
             keywords=state.get("preference_keywords") or [],
+            exclude=state.get("exclude_keywords") or [],
+            include=state.get("include_keywords") or [],
             stored={k: state.get(k) for k in _STORED_KEYS},
         )
         notice = " ".join(n for n in (state.get("notice"), out["notice"]) if n) or None
@@ -648,6 +723,8 @@ def _view(result: dict) -> dict:
         "departure_location": result.get("departure_location"),
         "outing_date": result.get("outing_date"),
         "departure_time": result.get("departure_time"),
+        "exclude_keywords": list(result.get("exclude_keywords") or []),
+        "include_keywords": list(result.get("include_keywords") or []),
         "preference_text": result.get("preference_text"),
         "reference_place": result.get("reference_place"),
         "reference_candidates": [{"name": c.get("name"), "address": c.get("address")}

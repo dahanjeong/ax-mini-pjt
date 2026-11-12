@@ -184,6 +184,53 @@ TOUR_CAT3_NAMES = {
 }
 
 
+# ---------------------------------------------------------------- list edits: leave out / add a kind
+
+# Follow-up edits of the shown list: "물놀이 장소는 빼주세요" / "물놀이 장소도 추천해주세요".
+# A kind covers its close relatives; checked on the name, the category (Kakao category_name /
+# TourAPI cat3 name) and the grouped entries' names (`includes`).
+EXCLUDE_GROUPS = {
+    "물놀이": ("물놀이", "워터", "워터파크", "수영장", "해수욕장", "계곡", "물썰매", "아쿠아파크"),
+    "키즈카페": ("키즈카페", "실내놀이터", "방방", "트램펄린"),
+    "동물원": ("동물원", "아쿠아리움", "동물농장", "주렁주렁"),
+    "박물관": ("박물관", "미술관", "전시관", "과학관", "갤러리"),
+    "놀이공원": ("놀이공원", "테마파크", "테마공원", "놀이동산"),
+    "공원": ("공원",),
+    "도서관": ("도서관",),
+    "체험농장": ("체험농장", "관광농원", "농.산.어촌"),
+    "식물원": ("식물원", "수목원"),
+}
+EXCLUDE_SETTINGS = {"실내": "indoor", "야외": "outdoor"}
+# keyword searches used when a kind the user asked to add is not among the candidates
+KIND_SEARCH = {
+    "물놀이": ("물놀이장", "워터파크"), "키즈카페": ("키즈카페",), "동물원": ("동물원", "아쿠아리움"),
+    "박물관": ("박물관", "과학관"), "놀이공원": ("놀이공원", "테마파크"), "공원": ("공원",),
+    "도서관": ("어린이도서관",), "체험농장": ("체험농장",), "식물원": ("수목원", "식물원"),
+}
+
+
+def exclusion_words(term: str) -> tuple[str, ...]:
+    return EXCLUDE_GROUPS.get(term, (term,))
+
+
+def search_words(term: str) -> tuple[str, ...]:
+    return KIND_SEARCH.get(term, (term,))
+
+
+def matches_kind(p: dict, term: str) -> bool:
+    """Is this place of the kind `term` (a kind group, 실내/야외, or a place name)?"""
+    if term in EXCLUDE_SETTINGS:
+        return p.get("indoor_outdoor") == EXCLUDE_SETTINGS[term]
+    name, cat = _text(p)
+    text = re.sub(r"\s+", "", "".join([name, cat, p.get("category", ""), *[str(n) for n in p.get("includes") or []]]))
+    return any(re.sub(r"\s+", "", w) in text for w in exclusion_words(term))
+
+
+def excluded_by(p: dict, terms: list[str]) -> Optional[str]:
+    """The first exclusion term that rules this place out, else None."""
+    return next((t for t in terms or [] if matches_kind(p, t)), None)
+
+
 def _text(p: dict) -> tuple[str, str]:
     cat = p.get("category", "")
     return p.get("name", ""), TOUR_CAT3_NAMES.get(cat, cat)

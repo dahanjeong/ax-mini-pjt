@@ -85,6 +85,8 @@ export interface ChatResponse {
   departure_location: Candidate | null;
   outing_date: string | null;
   departure_time: string | null; // "HH:MM" (KST)
+  exclude_keywords: string[]; // kinds of place ("물놀이") or place names left out, kept until reset
+  include_keywords: string[]; // kinds asked to be added to the list ("물놀이도 추천해주세요")
   preference_text: string | null;
   reference_place: string | null;
   reference_candidates: Candidate[];

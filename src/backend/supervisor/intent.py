@@ -15,6 +15,8 @@ import re
 from datetime import date, timedelta
 from typing import Optional
 
+from ..agents.candidates import EXCLUDE_GROUPS, EXCLUDE_SETTINGS, exclusion_words
+
 MIN_AGE, MAX_AGE = 0, 72
 
 # ---------------------------------------------------------------- slots
@@ -196,6 +198,89 @@ _REFERENCE = re.compile(
 )
 
 
+# ---------------------------------------------------------------- exclusions
+
+_EXCLUDE_VERB = (r"(?:빼\s*(?:주세요|줘요?|줄래요?|주실래요?|고|면)|제외(?:해\s*(?:주세요|줘요?)|하고|요)?|"
+                 r"말고|싫어(?:요)?|별로(?:예요|에요|야)?|안\s*(?:갈래요?|가고\s*싶|좋아해요?)|원하지\s*않)")
+EXCLUDE_VERB = re.compile(_EXCLUDE_VERB)
+_EXCLUDE = re.compile(rf"((?:[가-힣A-Za-z0-9]+[\s,]*){{1,3}}?)\s*{_EXCLUDE_VERB}")
+_KIND_WORDS = tuple(w for words in EXCLUDE_GROUPS.values() for w in words)
+
+
+_KIND_SUFFIX = re.compile(r"(?:장소|시설|종류|쪽|류|곳|들)+$")
+
+
+def is_kind_word(word: str) -> bool:
+    """'물놀이장', '워터파크', '키즈카페 장소' are kinds of place; '어린이대공원' is a place name."""
+    w = _KIND_SUFFIX.sub("", re.sub(r"\s+", "", word or ""))
+    return bool(w) and (w in EXCLUDE_GROUPS or w in EXCLUDE_SETTINGS or w in _KIND_WORDS
+                        or w.endswith("장") and w[:-1] in _KIND_WORDS)
+
+
+def normalize_exclusion(token: str) -> Optional[str]:
+    """'물놀이장소는' -> '물놀이', '워터파크' -> '물놀이', '야외는' -> '야외';
+    None when the token is not a kind of place ('낮잠', '강남역')."""
+    t = re.sub(r"\s+", "", token or "")
+    if len(t) < 2:
+        return None
+    for group, words in EXCLUDE_GROUPS.items():
+        if group in t or any(w in t for w in words):
+            return group
+    for setting in EXCLUDE_SETTINGS:
+        if t.startswith(setting):
+            return setting
+    m = _PREF_WORDS.search(t)
+    if m and m.group(0) not in ("위주", "느낌", "분위기", "조용한", "한적한", "넓은"):
+        return m.group(0)
+    return None
+
+
+# "물놀이 장소도 추천해주세요", "키즈카페도 넣어줘", "물놀이장 추가해주세요"
+_INCLUDE = re.compile(
+    r"((?:[가-힣A-Za-z0-9]+[\s,]*){1,3}?)\s*(?:"
+    r"(?:도|까지)\s*(?:추천|넣|포함|보여|알려|찾아|있으면)|"
+    r"(?:을|를)?\s*(?:추가|포함)\s*(?:해|시켜|하여|해서|좀))")
+
+
+def _exclusion_matches(text: str, pattern: re.Pattern = _EXCLUDE):
+    """(match, terms) for each exclusion (or, with `_INCLUDE`, inclusion) clause in `text`
+    that names a kind of place."""
+    for m in pattern.finditer(text or ""):
+        tokens = re.split(r"[\s,]+|(?<=[가-힣])(?:이랑|랑|하고)(?=\s|$)", m.group(1))
+        terms = [t for t in (normalize_exclusion(tok) for tok in tokens if tok) if t]
+        if terms:
+            yield m, terms
+
+
+def parse_exclusions(text: str) -> list[str]:
+    """Kinds of place the user wants left out: '물놀이장소는 빼주세요' -> ['물놀이']."""
+    out: list[str] = []
+    for _, terms in _exclusion_matches(text):
+        out += [t for t in terms if t not in out]
+    return out
+
+
+def parse_inclusions(text: str) -> list[str]:
+    """Kinds of place the user wants added to the list: '물놀이 장소도 추천해주세요' -> ['물놀이']."""
+    out: list[str] = []
+    for _, terms in _exclusion_matches(text, _INCLUDE):
+        out += [t for t in terms if t not in out]
+    return out
+
+
+def strip_exclusions(text: str) -> str:
+    """The text without its exclusion / inclusion clauses (what is left may still be a preference)."""
+    spans = [m for pattern in (_EXCLUDE, _INCLUDE) for m, _ in _exclusion_matches(text, pattern)]
+    for m in sorted(spans, key=lambda m: m.start(), reverse=True):
+        text = text[:m.start()] + " " + text[m.end():]
+    return re.sub(r"\s+", " ", text).strip(" ,.!?")
+
+
+def is_excluded_keyword(keyword: str, exclusions: list[str]) -> bool:
+    k = re.sub(r"\s+", "", keyword or "")
+    return any(w in k or k in w for t in exclusions or [] for w in exclusion_words(t))
+
+
 def parse_reference(text: str) -> Optional[str]:
     """Reference place of a 'similar place' request, e.g. '서울숲 좋았는데 비슷한 곳'."""
     if not re.search(r"비슷|같은\s*(?:곳|데|장소)|처럼", text):
@@ -233,7 +318,7 @@ _CHOICE_AWAITS = ("departure_choice", "reference_choice")
 _RESET = re.compile(r"처음부터|다시\s*시작|새로\s*시작|리셋|초기화")
 _ORDINALS = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5}
 _DETAIL_WORDS = re.compile(r"자세히|더\s*알려|어때|어떤\s*곳|정보|설명|궁금")
-_IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷|\d\s*시(?!간)")
+_IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷|\d\s*시(?!간)|빼|제외|말고")
 
 
 def detail_index(text: str, card_names: list[str]) -> Optional[int]:
@@ -290,6 +375,8 @@ def search_snapshot(state: dict) -> dict:
         "departure": [dep.get("lat"), dep.get("lng")],
         "outing_date": state.get("outing_date"),
         "departure_time": state.get("departure_time"),
+        "exclude_keywords": list(state.get("exclude_keywords") or []),
+        "include_keywords": list(state.get("include_keywords") or []),
         "preference_text": state.get("preference_text"),
         "reference_place": state.get("reference_place"),
     }
@@ -308,6 +395,10 @@ def plan_scope(searched: Optional[dict], current: dict) -> tuple[str, str]:
         return "change_date", SCOPE_ENVIRONMENT
     if current.get("departure_time") != searched.get("departure_time"):
         return "change_time", SCOPE_RERANK          # only the drive times change
+    if current.get("exclude_keywords", []) != searched.get("exclude_keywords", []):
+        return "change_exclusion", SCOPE_RERANK     # stored candidates filtered (widened if too few)
+    if current.get("include_keywords", []) != searched.get("include_keywords", []):
+        return "change_inclusion", SCOPE_RERANK     # kind added to the list (searched if not a candidate)
     if current["reference_place"] and current["reference_place"] != searched["reference_place"]:
         return "similar_place", SCOPE_RERANK
     if current["preference_text"] != searched["preference_text"]:

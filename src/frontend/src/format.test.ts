@@ -11,7 +11,7 @@ function response(fields: Partial<ChatResponse>): ChatResponse {
   return {
     session_id: "s", status: "ask", intent: "ask", reply: null, messages: [], notice: null, missing_inputs: [],
     candidates: [], available_date_range: null, baby_age_months: null, travels_during_nap: null,
-    departure_location: null, outing_date: null, departure_time: null, preference_text: null, reference_place: null,
+    departure_location: null, outing_date: null, departure_time: null, exclude_keywords: [], include_keywords: [], preference_text: null, reference_place: null,
     reference_candidates: [], result_cards: null, max_drive_hours: null, radius_km: null, radius_expanded: null,
     failed_sources: null, elapsed_s: null, preference_status: null, ...fields,
   };

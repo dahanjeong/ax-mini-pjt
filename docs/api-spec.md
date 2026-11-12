@@ -37,7 +37,7 @@
 | `message` | string | O | 사용자 메시지 (1~500자, 앞뒤 공백 제거) |
 
 ```json
-{"session_id": "3f2a9c1e-...", "message": "18개월 아기랑 이번 토요일에 강남역에서 출발해요"}
+{"session_id": "3f2a9c1e-...", "message": "18개월 아기랑 이번 토요일 오전 10시에 강남역에서 출발해요"}
 ```
 
 세션은 서버 메모리에만 보관하며, 서버가 재시작되면 사라진다.
@@ -48,7 +48,7 @@
 |---|---|---|
 | `session_id` | string | 이 대화의 세션 ID. 다음 요청에 그대로 보낸다 |
 | `status` | `"ask"` \| `"ready"` | 되묻기 / 추천 완료 (장소 상세 응답도 `ready`) |
-| `intent` | string | 판정한 의도: `ask`, `new_search`, `change_date`, `change_time`(출발 시각만 변경 → 이동시간만 재확인), `change_departure`, `change_age`, `change_preference`, `similar_place`, `no_change`, `place_detail`, `reset`, `out_of_scope` |
+| `intent` | string | 판정한 의도: `ask`, `new_search`, `change_date`, `change_time`(출발 시각만 변경 → 이동시간만 재확인), `change_exclusion`(제외 조건 추가 → 저장된 후보에서 빼고 재순위, 5곳 미만이면 반경 확대), `change_inclusion`(추가 요청 → 그 종류를 목록에 넣음, 후보에 없으면 키워드 검색), `change_departure`, `change_age`, `change_preference`, `similar_place`, `no_change`, `place_detail`, `reset`, `out_of_scope` |
 | `reply` | string \| null | 에이전트 응답 문구 (되묻기 질문 등) |
 | `messages` | string[] | 화면에 순서대로 보여줄 메시지 (`reply` + 추천 진행 메시지) |
 | `notice` | string \| null | 안내 문구 (예: 조회 가능한 날짜 안내, 장소가 5곳 미만) |
@@ -60,6 +60,8 @@
 | `departure_location` | object \| null | 확인된 출발지 (`lat`, `lng` 포함) |
 | `outing_date` | string \| null | 확인된 날짜 (YYYY-MM-DD) |
 | `departure_time` | string \| null | 확인된 출발 시각 (HH:MM, KST). 차량 이동시간 예측 기준 |
+| `exclude_keywords` | string[] | 제외 조건: 장소 종류(`물놀이`·`키즈카페`·`실내`·`야외` 등) 또는 추천 카드의 장소 이름. "처음부터" 전까지 유지 |
+| `include_keywords` | string[] | 추가 요청한 장소 종류 ("물놀이 장소도 추천해주세요" → `물놀이`). 같은 종류의 제외 조건은 풀린다 |
 | `preference_text` | string \| null | 확인된 취향 문장 |
 | `reference_place` | string \| null | "비슷한 곳" 요청의 기준 장소명 |
 | `reference_candidates` | array | 기준 장소 이름이 여러 곳일 때 후보 목록 `[{name, address}]` (번호나 이름으로 고름) |

@@ -235,3 +235,233 @@ def test_departure_time_change_rechecks_drive_times_only(session):
     assert v["intent"] == "change_time" and v["departure_time"] == "14:00"
     assert sum(calls.values()) == 0                       # no place / environment / review calls
     assert {c["drive"]["departure_time"] for c in v["result_cards"]} == {"2026-11-12T14:00"}
+
+
+# ---------------------------------------------------------------- exclusions ("물놀이장소는 빼주세요")
+
+from backend.agents.candidates import excluded_by  # noqa: E402
+from backend.supervisor.intent import parse_exclusions, strip_exclusions  # noqa: E402
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("물놀이장소는 빼주세요", ["물놀이"]), ("물놀이 빼줘", ["물놀이"]), ("물놀이장소는 제외", ["물놀이"]),
+    ("키즈카페랑 물놀이는 빼주세요", ["키즈카페", "물놀이"]), ("워터파크 말고 실내 위주로", ["물놀이"]),
+    ("야외는 싫어요", ["야외"]),
+    ("낮잠 시간은 피해서 가요", []), ("강남역 말고 판교역에서 출발할게요", []), ("조용한 곳 위주로", []),
+])
+def test_parse_exclusions(text, expected):
+    assert parse_exclusions(text) == expected
+
+
+def test_exclusion_clause_is_not_a_preference():
+    assert strip_exclusions("워터파크 말고 실내 위주로") == "실내 위주로"
+    assert parse_preference(strip_exclusions("물놀이장소는 빼주세요")) is None
+
+
+def test_excluded_by_name_category_includes_and_setting():
+    water = {"name": "북한산천연옥워터파크", "category": "여행 > 관광,명소 > 테마파크 > 워터테마파크", "types": []}
+    splash = {"name": "옹기테마공원 물놀이장", "category": "", "types": []}
+    grouped = {"name": "서울랜드", "category": "", "types": [], "includes": ["서울랜드 물놀이장"]}
+    museum = {"name": "국립중앙박물관", "category": "A02060100", "types": [], "indoor_outdoor": "indoor"}
+    assert excluded_by(water, ["물놀이"]) == excluded_by(splash, ["물놀이"]) == excluded_by(grouped, ["물놀이"]) == "물놀이"
+    assert excluded_by(museum, ["물놀이"]) is None
+    assert excluded_by(museum, ["박물관"]) == "박물관" and excluded_by(museum, ["실내"]) == "실내"
+
+
+@pytest.fixture
+def water_session():
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY))
+    tour = ([tp(1, "옹기테마공원 물놀이장", 4), tp(2, "천연옥워터파크", 5)]
+            + [tp(10 + i, f"장소{i}", 6 + i) for i in range(6)]
+            + [tp(30, "먼물놀이장", 70), tp(31, "먼공원", 71)])
+    prov, _ = make_providers(tour)
+    calls = counted(prov)
+    return (lambda tid: lambda msg: recommendation_turn(graph, tid, msg, prov)), calls
+
+
+def test_exclusion_follow_up_drops_water_places_without_new_searches(water_session):
+    new, calls = water_session
+    say = new("w1")
+    first = say(FIRST)
+    assert any("물놀이" in c["name"] or "워터" in c["name"] for c in first["result_cards"])
+    calls.clear()
+    v = say("물놀이장소는 빼주세요")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["intent"] == "change_exclusion" and len(names) == 5
+    assert not any("물놀이" in n or "워터" in n for n in names)
+    assert v["preference_text"] is None                      # not turned into a "물놀이" preference
+    assert "제외 조건(물놀이)에 해당하는 곳은 빼고 골랐어요" in v["notice"]
+    assert v["exclude_keywords"] == ["물놀이"]
+    assert calls["tour_search"] == 0 and calls["llm_judge"] == 0
+    v = say("일요일로 바꿔줘")                                 # the exclusion stays for later turns
+    assert not any("물놀이" in c["name"] or "워터" in c["name"] for c in v["result_cards"])
+
+
+def test_exclusion_leaving_too_few_widens_the_search():
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY))
+    tour = ([tp(i, f"물놀이장{i}", 4 + i) for i in range(4)] + [tp(10 + i, f"장소{i}", 9 + i) for i in range(2)]
+            + [tp(20 + i, f"먼곳{i}", 70 + i) for i in range(4)])
+    prov, _ = make_providers(tour)
+    say = lambda msg: recommendation_turn(graph, "w2", msg, prov)
+    say(FIRST)
+    v = say("물놀이 빼줘")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["radius_expanded"] and len(names) == 5 and not any("물놀이" in n for n in names)
+
+
+def test_exclusion_with_preference_keeps_only_the_positive_part(water_session):
+    new, _ = water_session
+    say = new("w3")
+    say(FIRST)
+    v = say("물놀이 말고 실내 위주로 가고 싶어요")
+    assert v["preference_text"] == "실내 위주로 가고 싶어요"
+    assert not any("물놀이" in c["name"] or "워터" in c["name"] for c in v["result_cards"])
+
+
+def test_named_place_is_excluded_by_name_not_by_kind():
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY))
+    tour = [tp(1, "서울어린이대공원", 4), tp(2, "올림픽공원", 5)] + [tp(10 + i, f"장소{i}", 6 + i) for i in range(5)]
+    prov, _ = make_providers(tour)
+    say = lambda msg: recommendation_turn(graph, "w4", msg, prov)
+    first = say("17개월 아기랑 강남역에서 내일 오전 10:30쯤 이동할 예정이에요. 낮잠시간을 이용할꺼에요.")
+    assert "서울어린이대공원" in [c["name"] for c in first["result_cards"]]
+    v = say("서울어린이대공원은 지난주에 갔어요. 빼주세요.")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["status"] == "ready" and v["intent"] == "change_exclusion"
+    assert "서울어린이대공원" not in names and "올림픽공원" in names      # other parks stay
+    assert v["notice"] == "제외 조건(서울어린이대공원)에 해당하는 곳은 빼고 골랐어요."
+
+
+def test_named_place_from_the_llm_extractor_is_excluded_by_name():
+    def extractor(text, awaiting):
+        if "빼" in text:
+            return {"exclude_keywords": ["서울어린이대공원"]}
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 10시"}
+
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, extractor=extractor))
+    tour = [tp(1, "서울어린이대공원", 4), tp(2, "올림픽공원", 5)] + [tp(10 + i, f"장소{i}", 6 + i) for i in range(5)]
+    prov, _ = make_providers(tour)
+    recommendation_turn(graph, "w5", "30개월 강남역 내일 오전 10시", prov)
+    v = recommendation_turn(graph, "w5", "거긴 지난주에 갔으니까 빼주세요", prov)
+    names = [c["name"] for c in v["result_cards"]]
+    assert "서울어린이대공원" not in names and "올림픽공원" in names
+
+
+# ---------------------------------------------------------------- list edits: the user's three examples
+
+import dataclasses  # noqa: E402
+
+from backend.supervisor.intent import parse_inclusions  # noqa: E402
+from backend.supervisor.pipeline import pick_including  # noqa: E402
+
+FIRST_NAP = "17개월 아기랑 강남역에서 이번주 일요일 11시쯤 낮잠 시간을 이용해서 이동할 예정이에요"
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("물놀이 장소도 추천해주세요", ["물놀이"]), ("물놀이장도 넣어줘", ["물놀이"]), ("키즈카페 추가해주세요", ["키즈카페"]),
+    ("물놀이도 할 수 있는 곳 추천해줘", []), ("물놀이 장소는 제외하고 추천해주세요", []),
+])
+def test_parse_inclusions(text, expected):
+    assert parse_inclusions(text) == expected
+
+
+def test_pick_including_adds_the_kind_and_keeps_rank_order():
+    ranked = [{"name": f"장소{i}", "ids": {"t": i}, "types": []} for i in range(7)] + [
+        {"name": "동네 물놀이장", "ids": {"t": 90}, "types": []}, {"name": "강변 물놀이장", "ids": {"t": 91}, "types": []}]
+    picks = pick_including(ranked, ["물놀이"], per_kind=2)
+    names = [p["name"] for p in picks]
+    assert len(names) == 5 and names[-2:] == ["동네 물놀이장", "강변 물놀이장"]
+    assert pick_including(ranked, [], per_kind=2)[0]["name"] == "장소0"
+
+
+def _list_session(tid, tour, keyword_places=()):
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY))
+    prov, _ = make_providers(tour)
+    searched = []
+
+    def keyword_search(q, lat=None, lng=None, radius=None):
+        searched.append(q)
+        return [dict(p, source="tourapi") for p in keyword_places if q in p["name"] or q == "워터파크"]
+
+    prov = dataclasses.replace(prov, keyword_search=keyword_search)
+    return (lambda msg: recommendation_turn(graph, tid, msg, prov)), searched
+
+
+def _water(names):
+    return [n for n in names if "물놀이" in n or "워터" in n]
+
+
+def test_example1_exclude_water_places_from_the_shown_list():
+    tour = [tp(1, "옹기테마공원 물놀이장", 4)] + [tp(10 + i, f"장소{i}", 5 + i) for i in range(6)]
+    say, _ = _list_session("e1", tour)
+    first = [c["name"] for c in say(FIRST_NAP)["result_cards"]]
+    assert _water(first)                                         # unfiltered first list has one
+    v = say("물놀이 장소는 제외하고 추천해주세요")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["intent"] == "change_exclusion" and len(names) == 5 and not _water(names)
+    assert set(first) - {"옹기테마공원 물놀이장"} <= set(names)     # the rest kept, the gap filled
+
+
+def test_example2_exclude_a_place_named_by_part_of_its_name():
+    tour = [tp(1, "서울어린이대공원", 4), tp(2, "올림픽공원", 5)] + [tp(10 + i, f"장소{i}", 6 + i) for i in range(5)]
+    say, _ = _list_session("e2", tour)
+    assert "서울어린이대공원" in [c["name"] for c in say(FIRST_NAP)["result_cards"]]
+    v = say("지난주에 어린이대공원을 다녀왔어요. 빼고 추천해주세요")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["intent"] == "change_exclusion" and "서울어린이대공원" not in names and "올림픽공원" in names
+    assert v["preference_text"] is None and v["exclude_keywords"] == ["서울어린이대공원"]
+
+
+def test_example3_add_water_places_from_the_candidates():
+    tour = [tp(10 + i, f"장소{i}", 4 + i) for i in range(6)] + [tp(1, "동네 물놀이장", 30)]
+    say, searched = _list_session("e3", tour)
+    assert not _water([c["name"] for c in say(FIRST_NAP)["result_cards"]])
+    v = say("물놀이 장소도 추천해주세요")
+    names = [c["name"] for c in v["result_cards"]]
+    assert v["intent"] == "change_inclusion" and len(names) == 5 and _water(names) == ["동네 물놀이장"]
+    assert v["preference_text"] is None and searched == []        # found among the candidates: no search
+
+
+def test_example3_add_water_places_found_by_keyword_search():
+    tour = [tp(10 + i, f"장소{i}", 4 + i) for i in range(6)]
+    say, searched = _list_session("e4", tour, keyword_places=[tp(1, "한강 물놀이장", 8)])
+    say(FIRST_NAP)
+    v = say("물놀이 장소도 추천해주세요")
+    assert "한강 물놀이장" in [c["name"] for c in v["result_cards"]] and "물놀이장" in searched
+
+
+def test_adding_a_kind_that_does_not_exist_says_so():
+    say, _ = _list_session("e5", [tp(10 + i, f"장소{i}", 4 + i) for i in range(6)])
+    say(FIRST_NAP)
+    v = say("물놀이 장소도 추천해주세요")
+    assert len(v["result_cards"]) == 5 and "반경 안에서 물놀이 장소를 찾지 못했어요" in v["notice"]
+
+
+def test_asking_for_an_excluded_kind_again_brings_it_back():
+    tour = [tp(1, "옹기테마공원 물놀이장", 4)] + [tp(10 + i, f"장소{i}", 5 + i) for i in range(6)]
+    say, _ = _list_session("e6", tour)
+    say(FIRST_NAP)
+    assert not _water([c["name"] for c in say("물놀이 장소는 빼주세요")["result_cards"]])
+    v = say("물놀이 장소도 추천해주세요")
+    assert v["exclude_keywords"] == [] and _water([c["name"] for c in v["result_cards"]])
+
+
+def test_placeholder_values_from_the_extractor_are_ignored():
+    from backend.prompts.extract import normalize_extraction
+    out = normalize_extraction({"departure_query": "<UNKNOWN>", "date_text": "null", "time_text": "없음",
+                                "preference_text": "조용한 곳", "exclude_keywords": ["물놀이", "<UNKNOWN>"]})
+    assert out == {"preference_text": "조용한 곳", "exclude_keywords": ["물놀이"]}
+
+
+def test_kind_word_excludes_the_kind_even_when_a_card_name_contains_it():
+    def extractor(text, awaiting):
+        if "제외" in text:
+            return {"exclude_keywords": ["물놀이장"]}
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 10시"}
+
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, extractor=extractor))
+    tour = [tp(1, "동네 물놀이장", 4), tp(2, "천연옥워터파크", 5)] + [tp(10 + i, f"장소{i}", 6 + i) for i in range(6)]
+    prov, _ = make_providers(tour)
+    recommendation_turn(graph, "k1", "30개월 강남역 내일 오전 10시", prov)
+    v = recommendation_turn(graph, "k1", "물놀이 장소는 제외하고 추천해주세요", prov)
+    assert v["exclude_keywords"] == ["물놀이"] and not _water([c["name"] for c in v["result_cards"]])

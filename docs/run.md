@@ -38,7 +38,7 @@ npm run dev
 백엔드를 띄운 뒤:
 ```bash
 curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
-     -d '{"message": "30개월 아기랑 이번 토요일에 강남역에서 출발해요"}'
+     -d '{"message": "30개월 아기랑 이번 토요일 오전 10시에 강남역에서 출발해요"}'
 # 응답의 session_id를 다음 요청에 넣으면 대화가 이어진다
 curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
      -d '{"session_id": "<위 응답의 session_id>", "message": "2번째 곳 더 알려줘"}'
