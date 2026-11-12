@@ -68,6 +68,8 @@ def test_frontend_source_has_no_secrets_or_external_api_calls():
 def test_frontend_calls_only_the_local_backend():
     for f in _files("src"):
         for url in re.findall(r"https?://[^\s\"'`/]+", f.read_text(encoding="utf-8")):
+            if url == "http://www.w3.org":          # SVG xmlns inside data: URIs, not a request
+                continue
             assert re.match(r"https?://(localhost|127\.0\.0\.1)(:\d+)?$", url), url
 
 

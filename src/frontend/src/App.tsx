@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import PlaceCard from "./PlaceCard.tsx";
 import { ChatError, checkHealth, sendChat } from "./api.ts";
 import { toAssistantMessage } from "./format.ts";
 import type { ChatMessage } from "./types.ts";
 
 const EXAMPLES = [
-  { text: "30개월 아기랑 이번 토요일에 강남역에서 출발해요" },
-  { text: "18개월, 내일 판교역에서 실내 위주로 가고 싶어요" },
-  { text: "24개월 아기, 모레 잠실역에서 서울숲 같은 곳" },
+  { text: "30개월 아기랑 이번 토요일 오전 10시에 강남역에서 출발해요" },
+  { text: "18개월, 내일 오후 1시에 판교역에서 출발해요. 실내 위주로요" },
+  { text: "24개월 아기, 모레 아침 9시에 잠실역에서 출발해요. 서울숲 같은 곳" },
 ];
 const WELCOME: ChatMessage = {
   role: "assistant",
-  texts: ["안녕하세요! 오늘은 어디로 놀러 가볼까요? 🧺\n아기 월령, 출발지, 날짜를 알려주시면 아기와 함께 가기 좋은 곳 5곳을 찾아드려요."],
+  texts: ["안녕하세요! 오늘은 어디로 놀러 가볼까요? 🧺\n아기 월령, 출발지, 날짜와 출발 시각을 알려주시면 아기와 함께 가기 좋은 곳 5곳을 찾아드려요."],
   cards: [],
   choices: [],
 };
@@ -22,15 +22,39 @@ export default function App() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [online, setOnline] = useState(true);
-  const endRef = useRef<HTMLDivElement>(null);
+  const pendingRef = useRef<HTMLDivElement>(null);
+  const lastTurnRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wasPending = useRef(false);
 
   useEffect(() => {
     checkHealth().then(setOnline);
   }, []);
 
+  // When an answer arrives, put the cursor back in the composer so a follow-up question can
+  // be answered right away (also after clicking an example or a choice button).
+  // preventScroll: the scroll effect below decides where the page sits.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, pending]);
+    if (wasPending.current && !pending) inputRef.current?.focus({ preventScroll: true });
+    wasPending.current = pending;
+  }, [pending]);
+
+  // While waiting, keep the "working on it" bubble in sight above the sticky composer;
+  // when the answer arrives, scroll to where it starts (not past its cards to the end).
+  useEffect(() => {
+    if (messages.length === 1 && !pending) return; // welcome screen: stay at the top
+    const frame = requestAnimationFrame(() => {
+      const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth";
+      if (pending) {
+        pendingRef.current?.scrollIntoView({ behavior, block: "end" });
+      } else {
+        lastTurnRef.current?.scrollIntoView({ behavior, block: "start" });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages.length, pending]);
 
   async function send(text: string) {
     const message = text.trim();
@@ -75,7 +99,13 @@ export default function App() {
       <main className="chat" aria-live="polite">
         {showExamples && <Hero />}
         {messages.map((m, i) => (
-          <Message key={i} message={m} onChoose={send} disabled={pending} />
+          <Message
+            key={i}
+            message={m}
+            onChoose={send}
+            disabled={pending}
+            turnRef={i === messages.length - 1 ? lastTurnRef : undefined}
+          />
         ))}
         {showExamples && (
           <>
@@ -90,14 +120,13 @@ export default function App() {
           </>
         )}
         {pending && (
-          <div className="turn assistant">
+          <div className="turn assistant" ref={pendingRef}>
             <div className="bubble assistant pending" role="status">
               <span className="dots keep-motion" aria-hidden="true"><i className="keep-motion" /><i className="keep-motion" /><i className="keep-motion" /></span>
               나들이 장소를 찾고 날씨·후기를 살펴보고 있어요. 10~20초쯤 걸려요.
             </div>
           </div>
         )}
-        <div ref={endRef} />
       </main>
 
       <form
@@ -107,13 +136,15 @@ export default function App() {
           send(input);
         }}
       >
+        {/* not disabled while waiting: a disabled input drops focus; sending is blocked in send() */}
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="예: 30개월 아기랑 이번 토요일에 강남역에서 출발해요"
+          placeholder="예: 30개월 아기랑 이번 토요일 오전 10시에 강남역에서 출발해요"
           maxLength={500}
-          disabled={pending}
           aria-label="메시지"
+          aria-busy={pending}
         />
         <button type="submit" className="stock primary" disabled={pending || !input.trim()}>
           보내기
@@ -127,6 +158,7 @@ interface MessageProps {
   message: ChatMessage;
   onChoose: (text: string) => void;
   disabled: boolean;
+  turnRef?: Ref<HTMLDivElement>;
 }
 
 function Hero() {
@@ -138,7 +170,7 @@ function Hero() {
   );
 }
 
-function Message({ message, onChoose, disabled }: MessageProps) {
+function Message({ message, onChoose, disabled, turnRef }: MessageProps) {
   const { role, texts, notice, cards = [], choices = [] } = message;
   const bubbles = texts.map((t, i) => (
     <div key={i} className={`bubble ${role}${i > 0 ? " follow" : ""}`}>
@@ -146,7 +178,7 @@ function Message({ message, onChoose, disabled }: MessageProps) {
     </div>
   ));
   return (
-    <div className={`turn ${role}`}>
+    <div className={`turn ${role}`} ref={turnRef}>
       {bubbles}
       {notice && <div className="notice">{notice}</div>}
       {choices.length > 0 && (

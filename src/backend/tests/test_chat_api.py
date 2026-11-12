@@ -44,7 +44,7 @@ def test_conversation_continues_and_returns_cards(api):
     client, _ = api
     sid = post(client, "30개월 아기랑 나들이")
     sid = sid.json()["session_id"]
-    v = post(client, "강남역에서 내일 갈게요", sid).json()
+    v = post(client, "강남역에서 내일 오전 10시 갈게요", sid).json()
     assert v["session_id"] == sid and v["status"] == "ready" and v["intent"] == "new_search"
     assert v["baby_age_months"] == 30 and v["outing_date"] == "2026-11-12"
     assert len(v["result_cards"]) == 5
@@ -53,13 +53,13 @@ def test_conversation_continues_and_returns_cards(api):
     assert v["preference_status"] == "off" and v["failed_sources"] == []
     assert any("찾고 있어요" in m for m in v["messages"])
     # follow-up in the same session
-    v = post(client, "모레로 바꿔줘", sid).json()
+    v = post(client, "모레 오전 10시로 바꿔줘", sid).json()
     assert v["intent"] == "change_date" and len(v["result_cards"]) == 5
 
 
 def test_sessions_are_independent(api):
     client, _ = api
-    a = post(client, "30개월 아기랑 강남역에서 내일").json()
+    a = post(client, "30개월 아기랑 강남역에서 내일 오전 10시").json()
     b = post(client, "아기랑 나들이").json()
     assert a["session_id"] != b["session_id"]
     assert a["status"] == "ready" and b["status"] == "ask"
@@ -67,13 +67,13 @@ def test_sessions_are_independent(api):
 
 def test_ambiguous_departure_lists_candidates(api):
     client, _ = api
-    v = post(client, "30개월 아기랑 시청에서 내일").json()
+    v = post(client, "30개월 아기랑 시청에서 내일 오전 10시").json()
     assert v["status"] == "ask" and [c["name"] for c in v["candidates"]] == ["서울시청", "수원시청"]
 
 
 def test_place_detail_has_no_new_cards(api):
     client, calls = api
-    sid = post(client, "30개월 아기랑 강남역에서 내일").json()["session_id"]
+    sid = post(client, "30개월 아기랑 강남역에서 내일 오전 10시").json()["session_id"]
     calls["judged"].clear()
     v = post(client, "2번째 곳 더 알려줘", sid).json()
     assert v["intent"] == "place_detail" and v["result_cards"] is None and calls["judged"] == []

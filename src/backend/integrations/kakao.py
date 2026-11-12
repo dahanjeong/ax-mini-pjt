@@ -8,6 +8,11 @@
                                            by an allowlist of category names
 - keyword_search(q, lat, lng, radius_km)  Providers.keyword_search (preference keywords;
                                            nationwide when lat/lng are None)
+- drive_minutes(o_lat, o_lng, d_lat, d_lng, departure_time)
+                                           Providers.drive_minutes: expected car travel time when
+                                           leaving at departure_time (Kakao Mobility future
+                                           directions, same REST key,
+                                           https://apis-navi.kakaomobility.com)
 
 Kakao limits `radius` to 20 km and returns at most 45 documents per query
 (3 pages x 15); wider areas are covered by TourAPI.
@@ -15,6 +20,7 @@ Kakao limits `radius` to 20 km and returns at most 45 documents per query
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Any, Optional
 
 import httpx
@@ -23,6 +29,7 @@ from ..core.geo import haversine_km
 from ..core.config import load_env
 
 BASE_URL = "https://dapi.kakao.com"
+NAVI_URL = "https://apis-navi.kakaomobility.com"
 TIMEOUT_S = 5.0
 MAX_RADIUS_M = 20000
 PAGE_SIZE = 15
@@ -43,13 +50,15 @@ MAX_GEOCODE_CANDIDATES = 5
 
 
 class KakaoClient:
-    def __init__(self, api_key: Optional[str] = None, http: Optional[httpx.Client] = None):
+    def __init__(self, api_key: Optional[str] = None, http: Optional[httpx.Client] = None,
+                 navi_http: Optional[httpx.Client] = None):
         if api_key is None:
             load_env()
             api_key = os.getenv("KAKAO_KEY")
         if not api_key:
             raise RuntimeError("KAKAO_KEY is not set")
         self.http = http or httpx.Client(base_url=BASE_URL, timeout=TIMEOUT_S)
+        self.navi_http = navi_http or httpx.Client(base_url=NAVI_URL, timeout=TIMEOUT_S)
         self.headers = {"Authorization": f"KakaoAK {api_key}"}
 
     def _get(self, path: str, params: dict) -> dict:
@@ -81,6 +90,22 @@ class KakaoClient:
         if not doc:
             raise ValueError(f"no region for {lat},{lng}")
         return doc.get("region_1depth_name", ""), doc.get("region_2depth_name", "")
+
+    # ---------------------------------------------------------------- travel time
+
+    def drive_minutes(self, o_lat: float, o_lng: float, d_lat: float, d_lng: float,
+                      departure_time: datetime) -> float:
+        """Expected car travel time in minutes when leaving at `departure_time` (KST; future
+        traffic, recommended route). Raises when no route is found."""
+        r = self.navi_http.get("/v1/future/directions", params={
+            "origin": f"{o_lng},{o_lat}", "destination": f"{d_lng},{d_lat}",
+            "departure_time": departure_time.strftime("%Y%m%d%H%M"), "summary": "true",
+        }, headers=self.headers)
+        r.raise_for_status()
+        route = (r.json().get("routes") or [{}])[0]
+        if route.get("result_code") != 0:
+            raise ValueError(f"no route: {route.get('result_code')} {route.get('result_msg')}")
+        return route["summary"]["duration"] / 60.0
 
     # ---------------------------------------------------------------- places
 

@@ -38,7 +38,7 @@ def chat():
 
 def test_extracts_all_inputs_from_one_message(chat):
     say = chat()
-    r = say("30개월 아기랑 강남역에서 출발해서 내일 나들이 가려고요")
+    r = say("30개월 아기랑 강남역에서 출발해서 내일 오전 10시 나들이 가려고요")
     assert r["status"] == "ready"
     assert r["baby_age_months"] == 30
     assert r["departure_location"]["name"] == GANGNAM["name"]
@@ -54,19 +54,19 @@ def test_asks_for_each_missing_input_in_turn(chat):
     assert "departure_location" in r["missing_inputs"]
     r = say("강남역")
     assert r["missing_inputs"] == ["outing_date"]
-    r = say("11월 15일")
+    r = say("11월 15일 오전 10시")
     assert r["status"] == "ready" and r["outing_date"] == "2026-11-15"
 
 
 def test_age_in_years_is_converted(chat):
-    r = chat()("3살 아이, 강남역에서 모레 갈게요")
+    r = chat()("3살 아이, 강남역에서 모레 오전 10시 갈게요")
     assert r["baby_age_months"] == 36 and r["status"] == "ready"
 
 
 @pytest.mark.parametrize("msg", ["80개월 아기", "73개월이에요", "-3개월", "10살 아이"])
 def test_age_out_of_range_refused_and_asked_again(chat, msg):
     say = chat()
-    r = say(msg + ", 강남역에서 내일")
+    r = say(msg + ", 강남역에서 내일 오전 10시")
     assert r["status"] == "ask"
     assert r["baby_age_months"] is None
     assert "0~72" in r["notice"]
@@ -76,8 +76,8 @@ def test_age_out_of_range_refused_and_asked_again(chat, msg):
 
 
 def test_age_boundaries_accepted(chat):
-    assert chat()("0개월 아기, 강남역에서 내일 낮잠 안 겹쳐")["baby_age_months"] == 0
-    assert chat()("72개월, 강남역에서 내일")["status"] == "ready"
+    assert chat()("0개월 아기, 강남역에서 내일 오전 10시, 낮잠 안 겹쳐")["baby_age_months"] == 0
+    assert chat()("72개월, 강남역에서 내일 오전 10시")["status"] == "ready"
 
 
 def test_non_numeric_age_refused(chat):
@@ -92,7 +92,7 @@ def test_non_numeric_age_refused(chat):
 
 def test_nap_question_asked_once_for_under_24_months(chat):
     say = chat()
-    r = say("10개월 아기, 강남역에서 내일 갈 거예요")
+    r = say("10개월 아기, 강남역에서 내일 오전 10시 갈 거예요")
     assert r["status"] == "ask" and r["missing_inputs"] == ["travels_during_nap"]
     assert "낮잠" in r["reply"]
     r = say("네, 낮잠 시간이랑 겹쳐요")
@@ -115,18 +115,18 @@ def test_nap_asked_right_after_age_before_other_inputs(chat):
 
 
 def test_nap_given_in_first_message_not_asked(chat):
-    r = chat()("23개월 아기, 강남역에서 내일, 낮잠 시간에는 이동 안 해요")
+    r = chat()("23개월 아기, 강남역에서 내일 오전 10시, 낮잠 시간에는 이동 안 해요")
     assert r["status"] == "ready" and r["travels_during_nap"] is False
 
 
 def test_exactly_24_months_no_nap_question(chat):
-    r = chat()("24개월 아기, 강남역에서 내일")
+    r = chat()("24개월 아기, 강남역에서 내일 오전 10시")
     assert r["status"] == "ready"
 
 
 def test_departure_not_found_asks_again(chat):
     say = chat()
-    r = say("30개월, 없는동네에서 내일")
+    r = say("30개월, 없는동네에서 내일 오전 10시")
     assert r["status"] == "ask" and "찾지 못" in r["notice"]
     assert r["missing_inputs"] == ["departure_location"]
     r = say("강남역")
@@ -135,7 +135,7 @@ def test_departure_not_found_asks_again(chat):
 
 def test_ambiguous_departure_shows_candidates_and_accepts_choice(chat):
     say = chat()
-    r = say("30개월, 시청에서 내일")
+    r = say("30개월, 시청에서 내일 오전 10시")
     assert r["status"] == "ask"
     assert [c["name"] for c in r["candidates"]] == ["서울시청", "수원시청", "대전시청"]
     for c in r["candidates"]:
@@ -147,30 +147,30 @@ def test_ambiguous_departure_shows_candidates_and_accepts_choice(chat):
 
 def test_ambiguous_departure_choice_by_name(chat):
     say = chat()
-    say("30개월, 시청에서 내일")
+    say("30개월, 시청에서 내일 오전 10시")
     r = say("대전시청이요")
     assert r["status"] == "ready" and r["departure_location"]["name"] == "대전시청"
 
 
 def test_geocode_failure_asks_again(chat):
-    r = chat()("30개월, 고장에서 내일")
+    r = chat()("30개월, 고장에서 내일 오전 10시")
     assert r["status"] == "ask" and "departure_location" in r["missing_inputs"]
 
 
 def test_past_date_refused(chat):
     say = chat()
-    r = say("30개월, 강남역에서 11월 1일")
+    r = say("30개월, 강남역에서 11월 1일 오전 10시")
     assert r["status"] == "ask" and "지난 날짜" in r["notice"]
     assert r["outing_date"] is None and r["missing_inputs"] == ["outing_date"]
-    r = say("어제")
+    r = say("어제 오전 10시")
     assert "지난 날짜" in r["notice"]
-    r = say("내일")
+    r = say("내일 오전 10시")
     assert r["status"] == "ready"
 
 
 def test_date_beyond_forecast_shows_range(chat):
     say = chat()
-    r = say("30개월, 강남역에서 12월 25일")
+    r = say("30개월, 강남역에서 12월 25일 오전 10시")
     assert r["status"] == "ask"
     assert r["available_date_range"] == {"start": "2026-11-11", "end": "2026-11-21"}
     assert "2026-11-11" in r["reply"] and "2026-11-21" in r["reply"]
@@ -180,7 +180,7 @@ def test_date_beyond_forecast_shows_range(chat):
 
 
 def test_today_is_allowed(chat):
-    assert chat()("30개월, 강남역에서 오늘")["status"] == "ready"
+    assert chat()("30개월, 강남역에서 오늘 오후 11시")["status"] == "ready"
 
 
 def test_unparseable_date_asked_again(chat):
@@ -212,5 +212,56 @@ def test_departure_after_date_or_age_words(text):
 def test_full_message_while_age_is_asked(chat):
     say = chat()
     assert say("아기랑 나들이 가고 싶어요")["status"] == "ask"
-    r = say("30개월이고 이번 토요일에 강남역에서 출발해요")
+    r = say("30개월이고 이번 토요일 오전 10시에 강남역에서 출발해요")
     assert r["status"] == "ready" and r["departure_location"]["name"].startswith("강남역")
+
+
+# ---------------------------------------------------------------- departure time
+
+from datetime import datetime  # noqa: E402
+
+from backend.supervisor.intent import parse_time  # noqa: E402
+
+
+@pytest.mark.parametrize("text,awaiting,expected", [
+    ("오전 9시", None, "09:00"), ("10시 반에 출발", None, "10:30"), ("14:00", None, "14:00"),
+    ("오후 2시 30분", None, "14:30"), ("3시쯤", None, "15:00"), ("밤 12시", None, "00:00"),
+    ("1시간 거리", None, None), ("서울시 송파구", None, None),
+    ("아침", None, None), ("아침에요", "time", "09:00"), ("점심 먹고요", "time", "12:00"),
+    ("지금 바로", "time", "now"), ("지금 바로 출발할게요", None, "now"), ("글쎄요", "time", None),
+])
+def test_parse_time(text, awaiting, expected):
+    assert parse_time(text, awaiting) == expected
+
+
+def test_departure_time_asked_after_date(chat):
+    say = chat()
+    r = say("30개월, 강남역에서 내일")
+    assert r["status"] == "ask" and r["missing_inputs"] == ["departure_time"]
+    assert "대략 언제쯤 출발할 예정이신가요?" in r["reply"]
+    r = say("10시 반쯤이요")
+    assert r["status"] == "ready" and r["departure_time"] == "10:30"
+
+
+def test_vague_departure_time_answer(chat):
+    say = chat()
+    say("30개월, 강남역에서 내일")
+    r = say("점심 먹고 출발해요")
+    assert r["status"] == "ready" and r["departure_time"] == "12:00"
+
+
+def test_unclear_departure_time_asked_again(chat):
+    say = chat()
+    say("30개월, 강남역에서 내일")
+    r = say("글쎄요")
+    assert r["status"] == "ask" and r["missing_inputs"] == ["departure_time"]
+    assert "이해하지 못했어요" in r["notice"]
+
+
+def test_past_time_today_refused_and_now_accepted():
+    now = datetime(2026, 11, 11, 15, 7)
+    graph = build_graph(Deps(geocode=geocode, today=lambda: TODAY, now=lambda: now))
+    r = chat_turn(graph, "t", "30개월, 강남역에서 오늘 오전 10시")
+    assert r["status"] == "ask" and "이미 지난" in r["notice"] and r["departure_time"] is None
+    r = chat_turn(graph, "t", "지금 바로요")
+    assert r["status"] == "ready" and r["departure_time"] == "15:07"

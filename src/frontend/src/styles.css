@@ -15,6 +15,9 @@
   --tile-edge: 5px;
 }
 
+/* scrollIntoView clears the sticky top bar and composer */
+html { scroll-padding-bottom: calc(var(--control) + var(--space-sm) + var(--space-md) + var(--space-md)); }
+
 body {
   background: var(--grain), var(--fibre), var(--color-paper);
   word-break: keep-all;
@@ -125,7 +128,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   clip-path: polygon(0% 100%, 0.0% 13.5%, 3.6% 15.4%, 7.1% 21.4%, 10.7% 19.4%, 14.3% 23.9%, 17.9% 29.3%, 21.4% 29.4%, 25.0% 37.5%, 28.6% 42.6%, 32.1% 47.2%, 35.7% 41.1%, 39.3% 43.8%, 42.9% 40.4%, 46.4% 46.2%, 50.0% 41.5%, 53.6% 30.1%, 57.1% 36.0%, 60.7% 31.2%, 64.3% 23.5%, 67.9% 19.4%, 71.4% 11.7%, 75.0% 8.8%, 78.6% 14.5%, 82.1% 10.5%, 85.7% 14.5%, 89.3% 18.7%, 92.9% 20.5%, 96.4% 30.0%, 100.0% 34.3%, 100% 100%);
 }
 
-.turn { display: flex; flex-direction: column; gap: var(--space-xs); }
+.turn { display: flex; flex-direction: column; gap: var(--space-xs); min-width: 0; }
 .turn.user { align-items: flex-end; }
 .turn.assistant, .turn.error { align-items: flex-start; }
 
@@ -175,7 +178,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 .examples-label { margin-top: var(--space-xs); font-size: var(--text-md); font-weight: 500; letter-spacing: 0; color: var(--color-muted); }
-.examples, .choices { display: grid; gap: var(--space-xs); width: 100%; padding-bottom: var(--space-2xs); }
+.examples, .choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); width: 100%; padding-bottom: var(--space-2xs); }
 .example, .choice {
   display: flex;
   align-items: center;
@@ -199,7 +202,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 /* ---------- place cards ---------- */
-.cards { display: grid; gap: var(--space-lg); width: 100%; margin-top: var(--space-xs); }
+/* minmax(0, 1fr): a grid column otherwise grows to its widest unbreakable content (a long
+   one-line review title made every card 512px wide on 320-412px phones) */
+.cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); width: 100%; margin-top: var(--space-xs); }
 
 .place-card {
   background: var(--grain), var(--fibre), var(--color-card);
@@ -310,6 +315,37 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   rotate: 45deg;
 }
 .failed { color: var(--color-muted); font-size: var(--text-sm); }
+
+.drive { color: var(--color-ink-2); }
+.drive-basis { color: var(--color-muted); }
+.drive-unverified {
+  background: color-mix(in oklab, var(--color-sand) 40%, var(--color-card));
+  color: var(--color-ink);
+  cursor: help;
+}
+
+.sources { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2xs); font-size: var(--text-sm); }
+.sources-label { color: var(--color-muted); }
+.sources ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2xs); }
+.sources a {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: baseline;
+  min-width: 0;
+  color: var(--color-ink-2);
+  text-decoration: none;
+}
+.sources a:hover .source-title,
+.sources a:focus-visible .source-title { text-decoration: underline; color: var(--color-ink); }
+.source-kind {
+  flex: none;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-xs);
+  background: var(--color-paper-3);
+  font-size: var(--text-xs, 0.75rem);
+}
+.source-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources a::after { content: "↗"; flex: none; color: var(--color-muted); }
 
 /* ---------- composer ---------- */
 .composer {

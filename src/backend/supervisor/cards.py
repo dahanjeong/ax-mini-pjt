@@ -1,16 +1,20 @@
 """Result cards: the fixed field set returned to the client for each recommended place."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from ..core.constants import FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, UNKNOWN
+from ..core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, FACILITY_KEYS, FAIL, NO_DUST, NO_REVIEW, UNKNOWN
 from ..prompts.judge import MAX_LINE_CHARS, sanitize_summary
 
 CARD_FIELDS = (
     "name", "distance_km", "indoor_outdoor", "age_suitability", "facilities",
-    "weather", "dust", "is_bad_day", "warnings", "review_summary", "failed_sources",
-    "preference_match", "includes",
+    "weather", "dust", "is_bad_day", "warnings", "review_summary", "review_sources", "failed_sources",
+    "preference_match", "includes", "drive",
 )
+MAX_SOURCES = 3
+MAX_TITLE_CHARS = 80
+SOURCE_KINDS = ("blog", "cafe")
 MATCH_LEVELS = ("높음", "보통", "낮음")
 FACILITY_LABELS = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
 FACILITY_VALUES = ("있음", "없음", UNKNOWN, FAIL)
@@ -37,6 +41,30 @@ def _preference_match(m: Any) -> Any:
     return {"level": m["level"], "evidence": evidence[:2]}
 
 
+def _review_sources(sources: Any) -> list[dict]:
+    """[{title, link, source}] with http(s) links only (NAVER results are untrusted)."""
+    out = []
+    for s in sources if isinstance(sources, list) else []:
+        if not isinstance(s, dict):
+            continue
+        link = s.get("link")
+        if not isinstance(link, str) or not link.startswith(("https://", "http://")):
+            continue
+        title = re.sub(r"\s+", " ", str(s.get("title") or "")).strip()[:MAX_TITLE_CHARS]
+        out.append({"title": title or link, "link": link,
+                    "source": s.get("source") if s.get("source") in SOURCE_KINDS else None})
+    return out[:MAX_SOURCES]
+
+
+def _drive(d: Any) -> dict:
+    """{status: 확인됨 | 이동시간 확인 필요, minutes: int | None, departure_time: "YYYY-MM-DDTHH:MM" | None}"""
+    d = d if isinstance(d, dict) else {}
+    when = d.get("departure_time") if isinstance(d.get("departure_time"), str) else None
+    if d.get("status") == DRIVE_CONFIRMED and isinstance(d.get("minutes"), (int, float)):
+        return {"status": DRIVE_CONFIRMED, "minutes": round(d["minutes"]), "departure_time": when}
+    return {"status": DRIVE_UNVERIFIED, "minutes": None, "departure_time": when}
+
+
 def build_card(place: dict) -> dict:
     fac = place.get("facilities") or {}
     summary = sanitize_summary(place.get("review_summary"))
@@ -55,9 +83,11 @@ def build_card(place: dict) -> dict:
         "is_bad_day": bool(place.get("is_bad_day")),
         "warnings": list(place.get("warnings") or []),
         "review_summary": summary,
+        "review_sources": _review_sources(place.get("review_sources")),
         "failed_sources": list(place.get("failed_sources") or []),
         "preference_match": _preference_match(place.get("preference_match")),
         "includes": [str(n) for n in place.get("includes") or []],
+        "drive": _drive(place.get("drive")),
     }
 
 

@@ -37,6 +37,7 @@ def build_providers(*, tour: Optional[TourClient] = None, kakao: Optional[KakaoC
         llm_indoor_outdoor=llm.classify_indoor_outdoor,
         keyword_search=keyword_search,
         embed=embedder.embed,
+        drive_minutes=kakao.drive_minutes,
     )
 
 
