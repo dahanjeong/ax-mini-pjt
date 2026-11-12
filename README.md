@@ -23,21 +23,19 @@
 ## 인-아웃 세트 통과율 (자체 평가)
 인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (25건 — 1~20번은 1차, 21~25번은 출발 시각 필수화로 추가, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
 - 1차 (Day 9 종료): 12 / 20 통과 — [evaluation/round1_report.md](evaluation/round1_report.md)
-- 2차 (Day 10 개선 후): XX / XX 통과 — [evaluation/round2_report.md](evaluation/round2_report.md)
-- 개선폭: +XX 건 (주요 개선 사항: ...)
+- 2차 (Day 10 개선 후): 22 / 25 통과 (1~20번 기준 17 / 20) — [evaluation/round2_report.md](evaluation/round2_report.md)
+- 개선폭: 1~20번 기준 +5건 (출발지·날짜 해석, 기준 장소 인식, 취향 매칭 기준값·규칙, 개인정보 요청 거절)
 
 ## 트라이앤에러 회고
-- 시도했지만 실패한 접근 · 왜 실패했는가
-- 최종 채택한 접근 · 왜 그것으로 갔는가
-- 남은 한계 · 향후 개선 방향
+[docs/retrospective.md](docs/retrospective.md) — 시도했다 실패한 접근과 이유, 최종 채택안, 남은 한계
 
-> 개발 과정 상세 기록은 [docs/](docs/)에 정리한다.
+> 개발 과정 상세 기록: [docs/dev-log.md](docs/dev-log.md)
 
 ## 핵심 코드 위치
-- [src/backend/agent.py:194](src/backend/agent.py#L194) — 메인 에이전트 그래프 (Supervisor, `build_graph`)
+- [src/backend/agent.py:248](src/backend/agent.py#L248) — 메인 에이전트 그래프 (Supervisor, `build_graph`)
 - [src/backend/tools.py](src/backend/tools.py) — 도메인 도구 (Providers 계약 · 타임아웃 · 실패 기록), 실제 구현은 [src/backend/integrations/](src/backend/integrations/)
 - [src/backend/retriever.py](src/backend/retriever.py) · [src/backend/agents/preference.py](src/backend/agents/preference.py) — RAG 파이프라인 (장소 프로필 임베딩 · 취향 매칭)
-- [src/backend/supervisor/pipeline.py:165](src/backend/supervisor/pipeline.py#L165) — 일임 파이프라인 (서브에이전트 실행 · 순위, `build_pipeline`)
+- [src/backend/supervisor/pipeline.py:319](src/backend/supervisor/pipeline.py#L319) — 일임 파이프라인 (서브에이전트 실행 · 순위, `build_pipeline`)
 - [src/backend/api/chat.py](src/backend/api/chat.py) — `POST /chat` 엔드포인트
 - [src/backend/agents/](src/backend/agents/) — 서브에이전트 (장소 탐색 · 환경 · 후기·적합도 · 취향 매칭)
 - [src/backend/prompts/](src/backend/prompts/) — LLM 프롬프트 · 답 스키마 · 답 검증
