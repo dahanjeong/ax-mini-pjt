@@ -90,6 +90,13 @@ def test_profile_docs_cover_place_facts_and_skip_failures():
     assert "정보를 불러오지 못함" not in [d.text for d in docs]
 
 
+def test_profile_names_the_kind_of_a_park_filed_as_a_plain_tourist_spot():
+    """Round 1 #4 (2nd run): TourAPI files 만석거공원 as a 관광지 only."""
+    p = {"name": "만석거공원", "ids": {"tourapi": "T9"}, "types": ["tourapi:12"], "description": ""}
+    texts = [d.text for d in preference.profile_docs(p)]
+    assert texts[:2] == ["만석거공원은(는) 관광지입니다", "만석거공원은(는) 공원입니다"]
+
+
 # ---------------------------------------------------------------- sub-graph
 
 def _merged(p, **kw):
@@ -154,6 +161,20 @@ def test_resolve_reference_statuses():
     with_preference(prov, keyword=lambda q, *a: many)
     assert preference.resolve_reference(prov, "서울숲")["status"] == "ok"  # one exact name match
 
+    # round 1 #4 (2nd run): TourAPI and Kakao both list 서울숲 at the same spot -> one place
+    kakao_soop = {**SEOULSOOP, "id": "K1", "source": "kakao", "lat": 37.5444, "lng": 127.0374}
+    with_preference(prov, keyword=lambda q, *a: [SEOULSOOP, kakao_soop])
+    assert preference.resolve_reference(prov, "서울숲")["status"] == "ok"
+    park = {**kakao_soop, "type": "kakao:PARK"}
+    with_preference(prov, keyword=lambda q, *a: [SEOULSOOP, park])
+    ok = preference.resolve_reference(prov, "서울숲")
+    assert ok["profile"][0] == "서울숲은(는) 공원입니다"                 # the kind Kakao knew, first
+    with_preference(prov, keyword=lambda q, *a: [SEOULSOOP])
+    assert not any("관광지입니다" in s for s in preference.resolve_reference(prov, "서울숲")["profile"])
+    far = {**kakao_soop, "lat": 35.1, "lng": 129.0}                    # same name, another city
+    with_preference(prov, keyword=lambda q, *a: [SEOULSOOP, far])
+    assert preference.resolve_reference(prov, "서울숲")["status"] == "ambiguous"
+
     two = [{**SEOULSOOP, "name": "어린이대공원 (서울)"}, {**SEOULSOOP, "name": "어린이대공원 (부산)"}]
     with_preference(prov, keyword=lambda q, *a: two)
     amb = preference.resolve_reference(prov, "어린이대공원")
@@ -177,6 +198,62 @@ def test_preference_ranks_after_safety_before_distance():
     card = build_card(res["result_cards"][0])
     assert card["preference_match"]["level"] == "높음"
     assert any("물놀이" in e["text"] for e in card["preference_match"]["evidence"])
+
+
+@pytest.mark.parametrize("text,setting", [
+    ("실내 위주로 가고 싶어요", "indoor"), ("비 와도 괜찮은 곳으로요", "indoor"), ("비가 오면 들어갈 수 있는 곳", "indoor"),
+    ("야외에서 뛰어놀 수 있는 곳", "outdoor"), ("실내도 야외도 좋아요", None), ("조용한 곳", None), (None, None),
+])
+def test_wanted_setting(text, setting):
+    assert preference.wanted_setting(text) == setting
+
+
+def test_indoor_wish_puts_indoor_places_first_with_the_setting_as_evidence():
+    """Round 1 #3 / #17 (2nd run): "실내 위주로" / "비 와도 괜찮은 곳" barely moved the order."""
+    prov, _ = make_providers()
+    with_preference(prov)
+    indoor = {"공룡관", "평범한곳"}
+    pool = [_merged(p, indoor_outdoor="indoor" if p["name"] in indoor else "outdoor") for p in places()]
+    out = preference.run(preference.build_graph(prov), places=pool,
+                         preference_text="비 와도 괜찮은 숲 같은 곳으로요", reference=None)
+    by_name = {p["name"]: out["matches"][place_key(p)] for p in pool}
+    for name in indoor:
+        assert by_name[name]["level"] == "높음"
+        assert by_name[name]["evidence"][0]["text"] == "실내 장소입니다"
+    # "숲" matches 숲속놀이터 by similarity, but it is outdoor: at most 보통
+    assert by_name["숲속놀이터"]["level"] == "보통"
+    assert all(by_name[n]["level"] != "높음" for n in by_name if n not in indoor)
+
+
+def test_places_of_the_reference_kind_are_high():
+    """Round 1 #4 (2nd run): "서울숲 같은 곳" must bring parks up, whatever the similarity."""
+    prov, _ = make_providers()
+    with_preference(prov, embed=lambda texts: [[1.0, 0.0] for _ in texts[:-1]] + [[0.0, 1.0]])   # all unrelated
+    pool = [_merged(tp(1, "만석거공원", 3)), _merged(tp(2, "광교수목원", 4)), _merged(tp(3, "정글대탐험", 2)),
+            _merged(tp(4, "공원옆동물원", 5))]
+    ref = {"name": "서울숲", "profile": ["서울숲은(는) 공원입니다"], "kinds": ["공원"]}
+    out = preference.run(preference.build_graph(prov), places=pool, preference_text=None, reference=ref)
+    level = {p["name"]: out["matches"][place_key(p)] for p in pool}
+    assert level["만석거공원"]["level"] == "높음"
+    assert level["만석거공원"]["evidence"][0]["text"] == "만석거공원은(는) 공원입니다"
+    assert level["광교수목원"]["level"] == "높음"                 # 자연 공원 counts as a park
+    assert level["정글대탐험"]["level"] == "낮음"
+    assert level["공원옆동물원"]["level"] == "낮음"               # "공원" in its name only: a zoo
+
+
+def test_matching_outdoor_place_held_back_by_rain_is_explained():
+    """Round 1 #4 (2nd run): parks matched "서울숲 같은 곳" but a rainy day put indoor places first."""
+    from backend.tests.test_recommendation import at_km
+    kinds = ["동물원", "키즈카페", "박물관", "체험관", "도서관"]      # distinct kinds: no per-kind cap
+    tour = [tp(i, f"실내{k}", 2 + i, type_="tourapi:14") for i, k in enumerate(kinds)]
+    tour.append(tp(9, "숲공원", 3.5, type_="tourapi:12", description="숲 속 산책로가 있습니다."))
+    rainy = {round(at_km(3.5), 3): {"forecast_source": "short_term", "precip_prob_max": 80, "temp_max": 15,
+                                    "temp_min": 5}}
+    prov, _ = make_providers(tour, weather=rainy, io={"숲공원": "outdoor"})
+    with_preference(prov)
+    res = recommend(prov, age_months=30, departure=DEP, outing_date=DATE, preference_text="숲")
+    assert "숲공원" not in [c["name"] for c in res["result_cards"]]
+    assert "숲공원 등" in res["notice"] and "실내 장소를 먼저" in res["notice"]
 
 
 def test_safety_still_beats_preference():

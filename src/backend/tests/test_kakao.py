@@ -50,6 +50,17 @@ def test_geocode_returns_distinct_places_when_ambiguous():
     assert [p["name"] for p in k.geocode("시청")] == ["서울시청", "수원시청"]
 
 
+def test_geocode_takes_a_subway_station_named_like_the_query():
+    pangyo = [doc("1", "판교역 신분당선", 37.3948, 127.1111, "SW8"),
+              doc("2", "판교역(충남)", 36.0857, 126.7066, "")]
+    k, _ = client(lambda r: json({"documents": pangyo}))
+    assert [p["name"] for p in k.geocode("판교역")] == ["판교역 신분당선"]
+    # a far station whose name does not start with the query is still a choice
+    k, _ = client(lambda r: json({"documents": [doc("1", "서판교역", 37.39, 127.08, "SW8"),
+                                                doc("2", "판교역(충남)", 36.0857, 126.7066, "")]}))
+    assert len(k.geocode("판교역")) == 2
+
+
 def test_geocode_falls_back_to_address_search():
     def handler(r):
         if r.url.path.endswith("keyword.json"):
@@ -125,13 +136,21 @@ def test_allowlist_and_types():
 def test_keyword_search_nearby_and_nationwide():
     water = doc("8", "워터파크", 37.51, 127.01, "AT4", cat="여행 > 관광,명소 > 테마파크 > 워터파크")
     alley = doc("10", "물놀이 골목", 37.51, 127.01, "AT4", cat="여행 > 관광,명소 > 테마거리")
-    k, seen = client(lambda r: json({"documents": [water, alley] if "x" in r.url.params
-                                     else [doc("9", "서울숲", 37.5444, 127.0374, "", cat="여행 > 공원")]}))
+    soop = doc("9", "서울숲", 37.5444, 127.0374, "", cat="여행 > 공원")
+    parking = doc("11", "서울숲 공영주차장", 37.5440, 127.0380, "PK6", cat="교통,수송 > 교통시설 > 주차장")
+    k, seen = client(lambda r: json({"documents": [water, alley] if "x" in r.url.params else [soop, parking]}))
     near = k.keyword_search("물놀이", 37.4979, 127.0276, 5.5)
     assert seen[0].url.params["radius"] == "5500" and seen[0].url.params["x"] == "127.0276"
     assert [p["name"] for p in near] == ["워터파크"]           # nearby candidates pass the allowlist
-    out = k.keyword_search("서울숲")
-    assert "x" not in seen[1].url.params and out[0]["name"] == "서울숲"
+    out = k.keyword_search("서울숲")                          # so do reference places, nationwide
+    assert "x" not in seen[1].url.params and [p["name"] for p in out] == ["서울숲"]
+
+
+def test_nationwide_keyword_search_drops_same_named_shops():
+    shops = [doc("1", "우주정거장", 37.5, 127.0, "", cat="가정,생활 > 유아 > 장난감,완구"),
+             doc("2", "우주정거장", 35.1, 129.0, "CT1", cat="문화,예술 > 문화시설 > 공연장,연극극장")]
+    k, _ = client(lambda r: json({"documents": shops}))
+    assert k.keyword_search("우주정거장") == []
 
 
 def test_http_errors_raise_so_guarded_marks_the_source_failed():

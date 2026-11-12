@@ -5,7 +5,7 @@
                      rule fallback for the optional preference sentence and the
                      reference place of a "similar place" request (the LLM
                      extractor is preferred when configured)
-- classify_message   reset / place_detail / out_of_scope / continue
+- classify_message   reset / place_detail / privacy / out_of_scope / continue
 - plan_scope         which sub-agents must re-run, from the inputs used by the
                      last search vs. the current inputs
 """
@@ -81,10 +81,10 @@ def parse_date(text: str, today: date) -> Optional[date]:
         prefix = m.group(1) or ""
         off = 1 if ("다음" in prefix or "담주" in prefix) else (0 if prefix else None)
         return _weekday_date(today, _WEEKDAYS[m.group(2)], off)
-    m = re.search(r"(다음\s*주|이번\s*주)?\s*주말", text)
+    m = re.search(r"(다음|담|이번|금)?\s*(?:주\s*)?주말", text)
     if m:
-        off = 1 if m.group(1) and "다음" in m.group(1) else (0 if m.group(1) else None)
-        return _weekday_date(today, 5, off)
+        # "다음 주말" = next week's Saturday; "이번 주말" / "주말" = the coming Saturday
+        return _weekday_date(today, 5, 1 if m.group(1) in ("다음", "담") else None)
     return None
 
 
@@ -137,8 +137,9 @@ def parse_time(text: str, awaiting: Optional[str] = None) -> Optional[str]:
 
 _DATE_TOKENS = re.compile(
     r"\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?|\d{1,2}\s*월\s*\d{1,2}\s*일?|\d+\s*일\s*(?:뒤|후)|"
-    r"글피|모레|내일|오늘|어제|그제|그저께|(?:다음\s*주|담주|이번\s*주|금주)?\s*[월화수목금토일]요일|"
-    r"(?:다음\s*주|이번\s*주)?\s*주말|다음\s*주|이번\s*주"
+    r"글피|모레|내일|오늘|어제|그제|그저께|(?:(?:다음\s*주|담주|이번\s*주|금주|다음|이번)\s*)?[월화수목금토일]요일|"
+    # "주말" before the bare "이번 주": otherwise "이번 주말" loses only "이번 주" and leaves "말"
+    r"(?:(?:다음|담|이번|금)\s*)?(?:주\s*)?주말|다음\s*주|담주|이번\s*주|금주"
 )
 _AGE_TOKENS = re.compile(rf"{_NUM}\s*(?:개월|달|살|세)(?:인|된)?|(?:신생아|아기|아이|애기|월령)(?:랑|와|과|하고|는|가|도)?")
 _NAP_TOKENS = re.compile(r"낮잠[^,.]*")
@@ -289,7 +290,17 @@ def parse_reference(text: str) -> Optional[str]:
     if not m:
         return None
     name = m.group(1).strip()
-    return None if name in ("거기", "그곳", "여기", "이곳", "저번", "아기", "아이") else name
+    if name in ("거기", "그곳", "여기", "이곳", "저번", "아기", "아이"):
+        return None
+    # "실내 같은 곳", "키즈카페 같은 곳": a kind or mood of place, not one place to compare with
+    if is_kind_word(name) or _PREF_WORDS.fullmatch(re.sub(r"\s+", "", name)):
+        return None
+    return name
+
+
+def strip_reference(text: str) -> str:
+    """The text without its 'similar place' clause ('서울숲 같은 곳이면 좋겠어요' -> '이면 좋겠어요')."""
+    return re.sub(r"\s+", " ", _REFERENCE.sub(" ", text or "")).strip(" ,.!?")
 
 
 def preference_keywords(text: str, limit: int = 3) -> list[str]:
@@ -318,6 +329,10 @@ _CHOICE_AWAITS = ("departure_choice", "reference_choice")
 _RESET = re.compile(r"처음부터|다시\s*시작|새로\s*시작|리셋|초기화")
 _ORDINALS = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5}
 _DETAIL_WORDS = re.compile(r"자세히|더\s*알려|어때|어떤\s*곳|정보|설명|궁금")
+# someone else's data ("다른 사용자들이 어디 갔는지 대화 기록이랑 출발지를 보여줘")
+_OTHERS = re.compile(r"(?:다른|타)\s*(?:사용자|유저|사람|회원|이용자|고객|분|가족|엄마|아빠|부모)|남의|남들")
+# not "어디" alone: "다른 분들이 많이 가는 곳 어디예요?" asks for popular places, not for data
+_PERSONAL_DATA = re.compile(r"기록|내역|로그|히스토리|대화|채팅|출발지|위치|주소|월령|개인\s*정보")
 _IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷|\d\s*시(?!간)|빼|제외|말고")
 
 
@@ -340,14 +355,18 @@ def detail_index(text: str, card_names: list[str]) -> Optional[int]:
 
 def classify_message(text: str, *, awaiting: Optional[str], card_names: list[str],
                      has_new_input: bool) -> tuple[str, Optional[int]]:
-    """Return (kind, detail_index); kind is reset | place_detail | out_of_scope | continue.
+    """Return (kind, detail_index); kind is reset | place_detail | privacy | out_of_scope | continue.
 
     While the supervisor is waiting for an answer (`awaiting`), a message is an answer
     attempt and goes on to the input checks, unless it clearly asks about a stored
     result card (not while choosing among departure candidates, where "2번" is a choice).
+    A request for other users' conversations or inputs is refused (`privacy`) even when
+    it mentions an outing.
     """
     if _RESET.search(text):
         return "reset", None
+    if _OTHERS.search(text) and _PERSONAL_DATA.search(text):
+        return "privacy", None
     idx = detail_index(text, card_names)
     if idx is not None and awaiting not in _CHOICE_AWAITS and (awaiting or not has_new_input):
         # stored cards stay answerable even while an invalid change is being re-asked

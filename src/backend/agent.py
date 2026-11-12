@@ -4,7 +4,7 @@ Graph (LangGraph, in-memory checkpointer keyed by thread_id):
 
     START -> extract -> classify -+-> reset -> check_age ...
                                   +-> detail -> END            (stored card)
-                                  +-> out_of_scope -> END
+                                  +-> out_of_scope -> END      (also `privacy`: other users' data)
                                   +-> check_age -> check_nap -> check_departure -> check_date
                                         -> check_reference -> plan -> delegate -> END
 
@@ -33,12 +33,12 @@ from langgraph.graph import END, START, StateGraph
 from .supervisor.intent import (
     _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, NOW, SCOPE_FULL, _NonNumeric,
     classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference, parse_time,
-    parse_reference, plan_scope, preference_keywords, search_snapshot,
+    parse_reference, plan_scope, preference_keywords, search_snapshot, strip_reference,
     EXCLUDE_VERB, is_excluded_keyword, is_kind_word, normalize_exclusion, parse_exclusions, parse_inclusions,
     strip_exclusions,
 )
 from .agents import preference as preference_agent
-from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED
+from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, NO_PREFERENCE_EVIDENCE
 from .supervisor.pipeline import _STORED_KEYS, KST, build_pipeline, run_pipeline
 from .tools import Providers
 
@@ -66,8 +66,11 @@ _CANCEL = re.compile(r"없음|없어요|취소|됐어|괜찮|상관\s*없")
 
 OUT_OF_SCOPE_REPLY = ("저는 아기와 함께 갈 나들이 장소 추천을 도와드려요. "
                       "아기 월령, 출발지, 날짜와 출발 시각을 알려주시면 장소를 찾아볼게요.")
+PRIVACY_REPLY = ("다른 사용자의 대화 기록이나 출발지·아기 정보는 보여드릴 수 없어요. 대화는 사용자마다 따로 "
+                 "관리되고 다른 분께 공개되지 않아요. 아기 월령, 출발지, 날짜와 출발 시각을 알려주시면 "
+                 "나들이 장소를 찾아볼게요.")
 INTENT_REPLY = {
-    "new_search": "입력이 모두 확인됐어요. 추천 장소를 찾아볼게요!",
+    "new_search": "입력이 모두 확인됐어요 ({inputs}). 추천 장소를 찾아볼게요!",
     "change_departure": "출발지가 바뀌어서 장소를 다시 찾아볼게요.",
     "change_age": "월령·낮잠 조건이 바뀌어서 이동 반경과 적합도를 다시 확인할게요.",
     "change_date": "날짜를 {date}로 바꿔서 날씨·미세먼지와 이동시간을 다시 확인할게요.",
@@ -110,7 +113,7 @@ class ChatState(TypedDict, total=False):
     exclude_keywords: Optional[list]         # kinds / names left out of the list ("물놀이"), until reset
     include_keywords: Optional[list]         # kinds asked to be added to the list ("물놀이도 추천해주세요")
     reference_place: Optional[str]           # name as the user said it
-    reference: Optional[dict]                # resolved: {"query", "name", "profile": [sentences]}
+    reference: Optional[dict]                # resolved: {"query", "name", "profile": [sentences], "kinds"}
     reference_candidates: list               # ambiguous lookup: [{"name", "address", "raw"}]
     reference_chosen: Optional[dict]         # raw place picked from reference_candidates
     # turn bookkeeping
@@ -198,7 +201,7 @@ def _card_text(i: int, c: dict) -> str:
             lines.append(f"후기 출처: {src.get('title') or ''} ({src['link']})")
     m = c.get("preference_match")
     if m:
-        ev = " / ".join(e["text"] for e in m.get("evidence") or []) or "근거 문장 없음"
+        ev = " / ".join(e["text"] for e in m.get("evidence") or []) or NO_PREFERENCE_EVIDENCE
         lines.append(f"취향 일치: {m['level']} (근거: {ev})")
     return "\n".join(lines)
 
@@ -380,6 +383,13 @@ def build_graph(deps: Deps):
         if not llm and awaiting not in ("departure", "departure_choice"):
             ref = parse_reference(text)
             pref = None if ref else parse_preference(without_exclusions(text))
+        elif not ref and awaiting not in ("departure", "departure_choice"):
+            # the LLM sometimes files "우주정거장 같은 곳" as a mood only: the rule still sees
+            # the reference place, so it is looked up (and asked back when not found)
+            ref = parse_reference(text)
+            if ref and pref and ref in pref:
+                rest = strip_reference(pref)
+                pref = rest if parse_preference(rest) else None
         if pref and (new_excl or new_incl):      # "물놀이장소는 제외" / "물놀이 장소도" edit the list,
             rest = without_exclusions(pref)      # they are not a mood to rank everything by
             listed = new_excl + new_incl
@@ -433,8 +443,8 @@ def build_graph(deps: Deps):
         return {"intent": kind, "detail_index": idx}
 
     def route_message(state: ChatState) -> str:
-        return {"reset": "reset", "place_detail": "detail", "out_of_scope": "out_of_scope"}.get(
-            state.get("intent"), "check_age")
+        return {"reset": "reset", "place_detail": "detail", "out_of_scope": "out_of_scope",
+                "privacy": "out_of_scope"}.get(state.get("intent"), "check_age")
 
     def reset(state: ChatState) -> ChatState:
         cleared: ChatState = {k: None for k in _SLOT_KEYS}
@@ -451,7 +461,9 @@ def build_graph(deps: Deps):
                 "awaiting": state.get("prev_awaiting"), "notice": None}
 
     def out_of_scope(state: ChatState) -> ChatState:
-        return {"reply": OUT_OF_SCOPE_REPLY, "missing_inputs": _missing(state)}
+        # also answers `privacy` (other users' data): refused, then the user's own inputs are asked for
+        reply = PRIVACY_REPLY if state.get("intent") == "privacy" else OUT_OF_SCOPE_REPLY
+        return {"reply": reply, "missing_inputs": _missing(state)}
 
     def check_age(state: ChatState) -> ChatState:
         if state.get("baby_age_months") is None:
@@ -583,11 +595,13 @@ def build_graph(deps: Deps):
         chosen = state.get("reference_chosen")
         if chosen:
             prof = preference_agent.reference_profile(prov, chosen)
-            return {"reference": {"query": name, "name": prof["name"], "profile": prof["profile"]},
+            return {"reference": {"query": name, "name": prof["name"], "profile": prof["profile"],
+                                  "kinds": prof.get("kinds") or []},
                     "reference_chosen": None}
         res = preference_agent.resolve_reference(prov, name)
         if res["status"] == "ok":
-            return {"reference": {"query": name, "name": res["name"], "profile": res["profile"]}}
+            return {"reference": {"query": name, "name": res["name"], "profile": res["profile"],
+                                  "kinds": res.get("kinds") or []}}
         if res["status"] == "not_found":
             return {
                 "awaiting": "reference",
@@ -620,7 +634,11 @@ def build_graph(deps: Deps):
         reply = INTENT_REPLY[intent].format(date=state.get("outing_date"), ref=state.get("reference_place"),
                                             time=state.get("departure_time"),
                                             excl=", ".join(state.get("exclude_keywords") or []),
-                                            incl="·".join(state.get("include_keywords") or []))
+                                            incl="·".join(state.get("include_keywords") or []),
+                                            inputs=_inputs_text(state))
+        ref = state.get("reference") or {}
+        if intent != "similar_place" and ref.get("name") and ref.get("profile"):
+            reply += f" 기준 장소 '{ref['name']}'과(와) 비슷한 곳을 우선으로 볼게요."
         return {
             "status": "ready",
             "intent": intent,
@@ -683,6 +701,15 @@ def build_graph(deps: Deps):
     g.add_edge("plan", "delegate")
     g.add_edge("delegate", END)
     return g.compile(checkpointer=MemorySaver())
+
+
+def _inputs_text(state: ChatState) -> str:
+    """How the inputs were understood, e.g. "24개월, 판교역 신분당선 출발, 2026-11-13 10:00"
+    ("2살" is shown as 24개월, so the user can catch a misreading)."""
+    dep = (state.get("departure_location") or {}).get("name")
+    parts = [f"{state.get('baby_age_months')}개월", f"{dep} 출발" if dep else None,
+             " ".join(x for x in (state.get("outing_date"), state.get("departure_time")) if x)]
+    return ", ".join(p for p in parts if p)
 
 
 def _missing(state: ChatState, with_age: bool = False) -> list:

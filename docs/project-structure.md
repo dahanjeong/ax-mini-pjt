@@ -56,12 +56,14 @@ mini-pjt/
 ├── data/                          # 사용한 문서·데이터
 │   └── tourapi_categories.json    # TourAPI 분류 코드표 (cat3 → 이름)
 ├── evaluation/                    # 인-아웃 세트와 자체 평가 결과
-│   ├── test_queries.csv           # 인-아웃 세트 20건 (docs/evaluation.md)
+│   ├── test_queries.csv           # 인-아웃 세트 25건 (docs/evaluation.md)
 │   ├── run_eval.py                # 인-아웃 세트 실행 · 채점 · 보고서 생성
 │   ├── results/                   # 차수별 결과 원본 (JSON)
 │   ├── round1_report.md           # 1차 자체 평가 결과 (12/20)
-│   └── round2_report.md           # 2차 자체 평가 결과 (예정)
+│   └── round2_report.md           # 2차 자체 평가 결과 (22/25)
 ├── docs/                          # 개발 문서
+│   ├── retrospective.md           # 트라이앤에러 회고
+│   └── dev-log.md                 # 개발 상세 기록 (시간순)
 ├── SERVICE.md                     # 서비스 스펙
 ├── requirements.txt               # 백엔드 Python 의존성
 ├── pytest.ini                     # 테스트 설정 (pythonpath = src)

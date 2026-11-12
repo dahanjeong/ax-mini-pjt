@@ -48,7 +48,7 @@
 |---|---|---|
 | `session_id` | string | 이 대화의 세션 ID. 다음 요청에 그대로 보낸다 |
 | `status` | `"ask"` \| `"ready"` | 되묻기 / 추천 완료 (장소 상세 응답도 `ready`) |
-| `intent` | string | 판정한 의도: `ask`, `new_search`, `change_date`, `change_time`(출발 시각만 변경 → 이동시간만 재확인), `change_exclusion`(제외 조건 추가 → 저장된 후보에서 빼고 재순위, 5곳 미만이면 반경 확대), `change_inclusion`(추가 요청 → 그 종류를 목록에 넣음, 후보에 없으면 키워드 검색), `change_departure`, `change_age`, `change_preference`, `similar_place`, `no_change`, `place_detail`, `reset`, `out_of_scope` |
+| `intent` | string | 판정한 의도: `ask`, `new_search`, `change_date`, `change_time`(출발 시각만 변경 → 이동시간만 재확인), `change_exclusion`(제외 조건 추가 → 저장된 후보에서 빼고 재순위, 5곳 미만이면 반경 확대), `change_inclusion`(추가 요청 → 그 종류를 목록에 넣음, 후보에 없으면 키워드 검색), `change_departure`, `change_age`, `change_preference`, `similar_place`, `no_change`, `place_detail`, `reset`, `out_of_scope`, `privacy`(다른 사용자의 대화 기록·출발지 등을 요구 → 거절하고 본인 입력 유도) |
 | `reply` | string \| null | 에이전트 응답 문구 (되묻기 질문 등) |
 | `messages` | string[] | 화면에 순서대로 보여줄 메시지 (`reply` + 추천 진행 메시지) |
 | `notice` | string \| null | 안내 문구 (예: 조회 가능한 날짜 안내, 장소가 5곳 미만) |
