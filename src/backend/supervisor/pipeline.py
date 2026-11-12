@@ -57,8 +57,13 @@ MSG_MATCH = "말씀하신 취향과 장소 설명·후기를 비교하고 있어
 MSG_AUGMENT = "취향에 잘 맞는 곳이 부족해 취향 키워드로 더 찾고 있어요..."
 MSG_INCLUDE = "말씀하신 {terms} 장소가 후보에 없어 더 찾고 있어요..."
 MSG_DRIVE = "추천 후보의 실제 차량 이동시간을 확인하고 있어요..."
-MSG_DONE ="날씨·편의시설·후기를 확인해 순위를 정했어요."
+# the closing line names only what this run checked (a date change does not re-read reviews)
+MSG_DONE = "날씨·편의시설·후기를 확인해 순위를 정했어요."
+MSG_DONE_ENVIRONMENT = "바뀐 날짜의 날씨·미세먼지로 순위를 다시 정리했어요."
+MSG_DONE_RERANK = "바뀐 조건을 반영해 순위를 다시 정했어요."
 NOTICE_NO_MATCH = "취향 매칭을 하지 못해 기본 순위로 보여드려요."
+NOTICE_WEATHER_HELD = ("날씨가 좋지 않은 날이라 취향에 잘 맞는 야외 장소({names} 등)보다 실내 장소를 먼저 "
+                       "보여드려요. 날짜를 바꾸면 다시 확인할게요.")
 
 _ENV_KEYS = ("weather", "dust", "is_bad_day", "bad_day_warnings")
 _REVIEW_KEYS = ("review_evidence_count", "review_insufficient", "age_suitability",
@@ -288,6 +293,17 @@ def _missing_inclusions(state: PipelineState) -> list[str]:
     return [t for t in state.get("include") or [] if not any(matches_kind(p, t) for p in results)]
 
 
+def _held_back_by_weather(state: PipelineState) -> list[str]:
+    """Outdoor places that match the preference 높음 but were ranked below the results
+    because of a bad-weather day (the safety rule), best first."""
+    shown = {place_key(p) for p in state.get("results") or []}
+    matches = state.get("matches") or {}
+    return [p["name"] for p in rank_places([{**p, "preference_match": matches.get(place_key(p))}
+                                            for p in state.get("merged") or []])
+            if place_key(p) not in shown and p["indoor_outdoor"] == "outdoor" and p["is_bad_day"]
+            and (matches.get(place_key(p)) or {}).get("level") == "높음"]
+
+
 def _augment_keywords(state: PipelineState) -> tuple[list[str], list[str]]:
     """(search words for asked-for kinds not found yet, preference keywords) still to search."""
     searched = set(state.get("include_searched") or [])
@@ -431,7 +447,12 @@ def build_pipeline(prov: Providers):
             notices.append(f"반경 안에서 {t} 장소를 찾지 못했어요.")
         if state.get("excluded_count"):
             notices.append(f"제외 조건({', '.join(state.get('exclude') or [])})에 해당하는 곳은 빼고 골랐어요.")
-        return {"notice": " ".join(notices) or None, "messages": [MSG_DONE]}
+        held = _held_back_by_weather(state)
+        if held:
+            notices.append(NOTICE_WEATHER_HELD.format(names=", ".join(held[:2])))
+        scope = state.get("scope", SCOPE_FULL)
+        done = {SCOPE_FULL: MSG_DONE, SCOPE_ENVIRONMENT: MSG_DONE_ENVIRONMENT}.get(scope, MSG_DONE_RERANK)
+        return {"notice": " ".join(notices) or None, "messages": [done]}
 
     g = StateGraph(PipelineState)
     for name, fn in (("search", search), ("evaluate", evaluate), ("refresh_env", refresh_env),

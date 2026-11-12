@@ -27,7 +27,24 @@ def test_headers_query_and_both_sources():
     assert str(seen[0].url).startswith("https://naverapihub.apigw.ntruss.com/")
     r = seen[0]
     assert r.headers["X-NCP-APIGW-API-KEY-ID"] == "id" and r.headers["X-NCP-APIGW-API-KEY"] == "secret"
-    assert r.url.params["query"] == "서울대공원 아기랑" and r.url.params["sort"] == "sim"
+    assert r.url.params["query"] == "서울대공원 아기랑" and r.url.params["sort"] == "sim"   # no address
+
+
+def test_query_carries_the_city_or_district():
+    """Round 1 #2 (2nd run): "패밀리가든 아기랑" returned hotels in 강릉 and 제주."""
+    nv, seen = client(lambda r: httpx.Response(200, json={"items": []}))
+    nv.reviews({"name": "패밀리가든", "address": "경기 성남시 분당구 판교역로146번길 20"})
+    assert seen[0].url.params["query"] == "성남 패밀리가든 아기랑"
+
+
+@pytest.mark.parametrize("address,word", [
+    ("경기 성남시 분당구 판교역로 146", "성남"), ("서울 송파구 올림픽로 240", "송파"),
+    ("경기도 가평군 상면 행현리", "가평"), ("서울특별시 성동구 뚝섬로 273", "성동"),
+    ("세종특별자치시 다솜로 261", ""), ("", ""),
+])
+def test_region_word(address, word):
+    from backend.integrations.naver import region_word
+    assert region_word(address) == word
 
 
 def test_cleans_filters_dedupes_and_interleaves():

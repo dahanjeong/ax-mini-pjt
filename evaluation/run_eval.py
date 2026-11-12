@@ -36,6 +36,7 @@ from backend.agent import Deps, build_graph, recommendation_turn  # noqa: E402
 from backend.integrations.bedrock import BedrockLLM  # noqa: E402
 from backend.integrations.factory import build_providers  # noqa: E402
 from backend.integrations.kakao import KakaoClient  # noqa: E402
+from backend.core.constants import NO_PREFERENCE_EVIDENCE  # noqa: E402
 from backend.supervisor.cards import build_cards  # noqa: E402
 
 EVAL_DIR = ROOT / "evaluation"
@@ -164,7 +165,8 @@ def render(view: dict) -> str:
             lines.append(f"    함께 있는 곳: {', '.join(c['includes'])}")
         if c.get("preference_match"):
             m = c["preference_match"]
-            lines.append(f"    취향 일치 {m['level']}: " + " / ".join(e["text"] for e in m["evidence"]))
+            ev = " / ".join(e["text"] for e in m["evidence"]) or NO_PREFERENCE_EVIDENCE   # as in the chat card text
+            lines.append(f"    취향 일치 {m['level']}: {ev}")
         lines.append("    후기 요약: " + " / ".join(c["review_summary"]))
         if c.get("review_sources"):
             lines.append("    후기 출처: " + " / ".join(f"{s['title']} <{s['link']}>" for s in c["review_sources"]))

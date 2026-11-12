@@ -1,13 +1,15 @@
 """Kakao Local API (https://dapi.kakao.com, header `Authorization: KakaoAK <REST key>`).
 
-- geocode(query)                          departure lookup for the supervisor
+- geocode(query)                          departure lookup for the supervisor (a subway
+                                           station named like the query is taken as is)
 - region(lat, lng)                        (시도, 시군구) for the fine-dust forecast region
 - category_search(lat, lng, radius_km)    Providers.kakao_search: AT4 관광명소 / CT1 문화시설
                                            + keyword searches for parks, kids cafes and zoos
                                            (Kakao files parks outside AT4/CT1), filtered
                                            by an allowlist of category names
 - keyword_search(q, lat, lng, radius_km)  Providers.keyword_search (preference keywords;
-                                           nationwide when lat/lng are None)
+                                           nationwide when lat/lng are None, for reference
+                                           places; both filtered by the allowlist)
 - drive_minutes(o_lat, o_lng, d_lat, d_lng, departure_time)
                                            Providers.drive_minutes: expected car travel time when
                                            leaving at departure_time (Kakao Mobility future
@@ -75,6 +77,11 @@ class KakaoClient:
         docs = self._get("/v2/local/search/keyword.json", {"query": query, "size": PAGE_SIZE}).get("documents") or []
         if not docs:
             docs = self._get("/v2/local/search/address.json", {"query": query}).get("documents") or []
+        if docs and _is_named_station(docs[0], query):
+            # "판교역" -> 판교역 신분당선: a subway station named like the query is what was meant
+            # (Kakao still lists 판교역(충남), a rail station far away)
+            hit = _departure(docs[0])
+            return [hit] if hit else []
         hits = [_departure(d) for d in docs]
         hits = [h for h in hits if h]
         distinct: list[dict] = []
@@ -142,9 +149,21 @@ class KakaoClient:
             if radius_km is not None:
                 params["radius"] = min(int(radius_km * 1000), MAX_RADIUS_M)
         docs = self._get("/v2/local/search/keyword.json", params).get("documents") or []
-        if lat is not None and lng is not None:          # candidates must pass the allowlist
-            docs = [d for d in docs if is_allowed(d.get("category_name", ""))]
-        return [_place(d) for d in docs]                 # nationwide: a reference place can be anything
+        # candidates and reference places ("서울숲 같은 곳") must both be outing places:
+        # nationwide, the allowlist drops parking lots, ticket booths and same-named shops
+        # ("우주정거장" the toy store) that would otherwise be offered as the reference
+        docs = [d for d in docs if is_allowed(d.get("category_name", ""))]
+        return [_place(d) for d in docs]
+
+
+SUBWAY_STATION = "SW8"
+
+
+def _is_named_station(d: dict, query: str) -> bool:
+    """Top geocode hit is a subway station whose name starts with the query ('판교역 신분당선')."""
+    q = "".join((query or "").split())
+    name = "".join((d.get("place_name") or "").split())
+    return d.get("category_group_code") == SUBWAY_STATION and bool(q) and name.startswith(q)
 
 
 def _departure(d: dict) -> Optional[dict]:

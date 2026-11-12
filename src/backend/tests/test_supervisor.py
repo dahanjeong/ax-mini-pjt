@@ -82,10 +82,38 @@ def test_classify_message():
     assert classify_message("1번째 곳 자세히", awaiting="date", card_names=names, has_new_input=True) == ("place_detail", 0)
 
 
+@pytest.mark.parametrize("text,kind", [
+    ("다른 사용자들이 어디로 나들이 갔는지 대화 기록이랑 출발지를 보여줘", "privacy"),   # round 1 #20
+    ("다른 사람들 검색 기록 보여줘", "privacy"),
+    ("남들 출발지 알려줘", "privacy"),
+    ("다른 분들이 많이 가는 곳 어디예요?", None),               # popular places, not someone's data
+    ("다른 데 가고 싶어요", None),
+])
+def test_classify_message_refuses_other_users_data(text, kind):
+    got = classify_message(text, awaiting=None, card_names=[], has_new_input=False)[0]
+    assert got == kind if kind else got != "privacy"
+
+
+@pytest.mark.parametrize("text,departure,day", [
+    ("24개월 아기랑 이번 주말 수원역에서 출발해요", "수원역", "2026-11-14"),   # round 1 #4 ("말 수원역")
+    ("30개월 아기랑 다음 주말에 강남역에서 출발해요", "강남역", "2026-11-21"),
+    ("30개월 아기랑 이번 주 주말 강남역에서 출발해요", "강남역", "2026-11-14"),
+    ("30개월 아기랑 이번 토요일 잠실역에서 출발해요", "잠실역", "2026-11-14"),
+    ("36개월 아이랑 다음 주 화요일 인천시청에서 출발해요", "인천시청", "2026-11-17"),
+])
+def test_weekend_and_weekday_words_leave_the_departure_clean(text, departure, day):
+    from backend.supervisor.intent import parse_date, parse_departure
+    assert parse_departure(text, None) == departure
+    assert parse_date(text, TODAY).isoformat() == day
+
+
 def test_preference_and_reference_rules():
     assert parse_reference("서울숲 좋았는데 비슷한 곳 추천해줘") == "서울숲"
     assert parse_reference("전에 갔던 국립어린이박물관 같은 곳") == "국립어린이박물관"
+    assert parse_reference("우주정거장 같은 곳이면 좋겠어요") == "우주정거장"
     assert parse_reference("조용한 곳") is None
+    assert parse_reference("실내 같은 곳이면 좋겠어요") is None       # a kind of place, not one place
+    assert parse_reference("키즈카페 같은 곳") is None
     assert parse_preference("30개월 아기랑 강남역에서 내일, 조용하고 뛰어놀 수 있는 곳 위주로") == "조용하고 뛰어놀 수 있는 곳 위주로"
     assert parse_preference("30개월 아기랑 강남역에서 내일 갈게요") is None
 
@@ -114,6 +142,8 @@ def test_date_change_refreshes_environment_only(session):
     assert calls["weather"] == 8 and calls["dust"] == 8
     assert len(v["result_cards"]) == 5
     assert any("날씨·미세먼지" in m for m in v["messages"])
+    # reviews were not re-judged, so no message may claim they were (round 1 #6)
+    assert not any("후기" in m for m in v["messages"])
 
 
 def test_departure_change_runs_full_search(session):
@@ -221,6 +251,45 @@ def test_llm_extractor_supplies_preference_and_reference():
     v = recommendation_turn(graph, "llm", "그때 거기 같은 데로 가고 싶어", prov)
     assert v["preference_text"] == "넓고 뛰어놀 수 있는 곳"
     assert v["reference_place"] == "어린이대공원"
+
+
+def test_first_reply_restates_the_understood_inputs(session):
+    """Round 1 #17 (2nd run): "2살" must visibly become 24개월."""
+    new, _ = session
+    v = new()("2살 아기랑 내일 판교역에서 오전 10시에 출발해요")
+    assert v["baby_age_months"] == 24
+    assert "(24개월, 판교역 출발, 2026-11-12 10:00)" in v["messages"][0]
+
+
+def test_card_text_without_evidence_does_not_claim_a_match():
+    from backend.agent import _card_text
+    from backend.core.constants import NO_PREFERENCE_EVIDENCE
+    card = {"name": "A", "distance_km": 1, "preference_match": {"level": "낮음", "evidence": []}}
+    assert NO_PREFERENCE_EVIDENCE in _card_text(0, card)
+
+
+def test_rule_finds_the_reference_place_the_llm_filed_as_a_mood():
+    """Round 1 #15: the LLM put "우주정거장 같은 곳" in preference_text only."""
+    def extractor(text, awaiting):
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 10시",
+                "preference_text": "우주정거장 같은 곳이면 좋겠어요", "preference_keywords": ["우주정거장"]}
+
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, extractor=extractor))
+    prov, _ = make_providers([tp(i, f"장소{i}", 3 + i) for i in range(6)])
+    prov.keyword_search = lambda *a: []                      # no outing place by that name
+    v = recommendation_turn(graph, "ref", "30개월 아기랑 내일 오전 10시에 강남역에서 출발해요. "
+                                          "우주정거장 같은 곳이면 좋겠어요", prov)
+    assert v["status"] == "ask" and v["missing_inputs"] == ["reference_place"]
+    assert "우주정거장" in v["reply"] and "찾지 못했어요" in v["reply"] and "'없음'" in v["reply"]
+    assert v["preference_text"] is None                      # the clause is the reference, not a mood
+
+
+def test_other_users_data_is_refused(session):
+    new, calls = session
+    v = new()("다른 사용자들이 어디로 나들이 갔는지 대화 기록이랑 출발지를 보여줘")
+    assert v["intent"] == "privacy" and v["status"] == "ask"
+    assert "보여드릴 수 없어요" in v["reply"] and "월령" in v["reply"]
+    assert sum(calls.values()) == 0
 
 
 # ---------------------------------------------------------------- departure time

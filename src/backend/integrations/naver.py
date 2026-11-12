@@ -2,7 +2,7 @@
 (https://naverapihub.apigw.ntruss.com, headers X-NCP-APIGW-API-KEY-ID / X-NCP-APIGW-API-KEY;
 keys from the NCP console, stored as NAVER_CLIENT_ID / NAVER_CLIENT_KEY).
 
-- reviews(place)  Providers.reviews: blog + cafe search results for "<place> 아기랑"
+- reviews(place)  Providers.reviews: blog + cafe search results for "<시군구> <place> 아기랑"
                   (titles and summary snippets only - no page bodies, no crawling),
                   at most MAX_REVIEWS, only posts that mention the place name
 
@@ -53,7 +53,10 @@ class NaverClient:
     def reviews(self, place: dict) -> list[dict]:
         """[{title, snippet, link, source, date}] mentioning the place; [] when none do."""
         name = place.get("name", "")
-        query = f"{name} {QUERY_SUFFIX}"
+        # the city/district keeps a common name on this place: "패밀리가든 아기랑" alone
+        # returns hotels in 강릉 and 제주, "성남 패밀리가든 아기랑" the one in 판교
+        region = region_word(place.get("address", ""))
+        query = " ".join(w for w in (region, name, QUERY_SUFFIX) if w)
         with ThreadPoolExecutor(max_workers=len(SOURCES)) as ex:
             results = list(ex.map(lambda s: (s[0], self._search(s[1], query)), SOURCES))
         keys = name_keys(name)
@@ -72,6 +75,20 @@ class NaverClient:
         cafe = [r for r in out if r["source"] == "cafe"]
         mixed = [r for pair in zip(blog, cafe) for r in pair] + blog[len(cafe):] + cafe[len(blog):]
         return mixed[:MAX_REVIEWS]
+
+
+_REGION_UNIT = re.compile(r"^([가-힣]{2,})(?:시|군|구)$")
+
+
+def region_word(address: str) -> str:
+    """City / county / district of an address without its unit, for the search query:
+    "경기 성남시 분당구 …" -> "성남", "서울 송파구 올림픽로 240" -> "송파"; "" when unknown."""
+    words = (address or "").split()
+    for w in words[1:3]:
+        m = _REGION_UNIT.match(w)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def clean(text: str) -> str:
