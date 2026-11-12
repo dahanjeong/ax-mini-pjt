@@ -1,12 +1,9 @@
-/* ui/Composer */
+/* ui/Composer: pinning and paper from .sticky-bar (commonStyle) */
 .composer {
-  position: sticky;
   bottom: 0;
   z-index: var(--z-sticky);
-  display: flex;
   gap: var(--space-xs);
   padding: var(--space-sm) var(--space-md) var(--space-md);
-  background: var(--grain), var(--color-paper);
   border-top: var(--rule-hair) solid var(--color-rule);
 }
 .composer-input {

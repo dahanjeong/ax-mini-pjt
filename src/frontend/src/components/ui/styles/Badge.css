@@ -1,0 +1,10 @@
+/* ui/Badge: shape from .pill (commonStyle); tone comes from the base layer as data-tone */
+.badge {
+  padding: var(--space-3xs) var(--space-sm);
+  background: var(--color-paper-3);
+}
+.badge[data-tone="good"] { background: var(--tint-good); }
+.badge[data-tone="caution"] { background: var(--tint-caution); }
+.badge[data-tone="bad"] { background: var(--tint-bad-strong); }
+.badge[data-tone="accent"] { background: var(--tint-accent); color: var(--color-accent-ink); }
+.badge[data-tone="muted"] { color: var(--color-ink-2); }

@@ -1,15 +1,5 @@
-import { Fragment, type ReactNode } from "react";
-
-export interface DescriptionItem {
-  term: ReactNode;
-  detail: ReactNode;
-  key?: string;
-}
-
-export interface DescriptionListProps {
-  items: DescriptionItem[];
-  classNames?: { root?: string; term?: string; detail?: string };
-}
+import { Fragment } from "react";
+import type { DescriptionListProps } from "./types/index.ts";
 
 // Unstyled term/detail pairs (<dl>).
 export function DescriptionList({ items, classNames = {} }: DescriptionListProps) {

@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { TypingIndicator } from "../../components/ui/index.ts";
-import "./chat.css";
+import "./styles/commonStyle.css";
 
 // The assistant's "working on it" turn while an answer is on its way.
 export const PendingTurn = forwardRef<HTMLDivElement>(function PendingTurn(_props, ref) {

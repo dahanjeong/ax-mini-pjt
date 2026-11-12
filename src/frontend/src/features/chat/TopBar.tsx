@@ -1,15 +1,11 @@
 import { Button, StatusPill } from "../../components/ui/index.ts";
-import "./chat.css";
+import type { TopBarProps } from "./types/index.ts";
+import "../../components/ui/styles/commonStyle.css";
+import "./styles/TopBar.css";
 
-interface Props {
-  online: boolean;
-  canRestart: boolean;
-  onRestart: () => void;
-}
-
-export function TopBar({ online, canRestart, onRestart }: Props) {
+export function TopBar({ online, canRestart, onRestart }: TopBarProps) {
   return (
-    <header className="topbar">
+    <header className="sticky-bar topbar">
       <div className="brand">
         <h1>아기랑 나들이</h1>
         <p>우리 가족 주말 나들이, 같이 찾아봐요</p>

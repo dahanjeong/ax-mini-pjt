@@ -1,6 +1,6 @@
 // Backend values -> badge tones.
 import type { BadgeTone } from "../../components/ui/index.ts";
-import type { PlaceCardData, PreferenceMatch } from "../../types.ts";
+import type { PlaceCardData, PreferenceMatch } from "../../api/index.ts";
 
 export const SUITABILITY_TONE: Record<PlaceCardData["age_suitability"], BadgeTone> = {
   적합: "good",

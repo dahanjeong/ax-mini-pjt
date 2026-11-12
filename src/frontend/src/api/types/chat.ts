@@ -99,19 +99,3 @@ export interface ChatResponse {
   elapsed_s: number | null;
   preference_status: string | null;
 }
-
-// one entry of the chat transcript
-export interface Choice {
-  label: string;
-  send: string;
-}
-
-export type Role = "user" | "assistant" | "error";
-
-export interface ChatMessage {
-  role: Role;
-  texts: string[];
-  notice?: string | null;
-  cards?: PlaceCardData[];
-  choices?: Choice[];
-}

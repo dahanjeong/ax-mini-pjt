@@ -1,18 +1,10 @@
-import type { Ref } from "react";
 import { Bubble, Callout, Tile, TileGroup } from "../../components/ui/index.ts";
 import { PlaceCardList } from "../place/index.ts";
-import type { ChatMessage } from "../../types.ts";
-import "./chat.css";
-
-interface Props {
-  message: ChatMessage;
-  onChoose: (text: string) => void;
-  disabled: boolean;
-  turnRef?: Ref<HTMLDivElement>;
-}
+import type { MessageProps } from "./types/index.ts";
+import "./styles/commonStyle.css";
 
 // One turn of the transcript: bubbles, a notice, numbered choices and place cards.
-export function Message({ message, onChoose, disabled, turnRef }: Props) {
+export function Message({ message, onChoose, disabled, turnRef }: MessageProps) {
   const { role, texts, notice, cards = [], choices = [] } = message;
   return (
     <div className={`turn ${role}`} ref={turnRef}>

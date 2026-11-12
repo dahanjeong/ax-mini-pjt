@@ -1,6 +1,5 @@
-import { forwardRef, type ButtonHTMLAttributes } from "react";
-
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
+import { forwardRef } from "react";
+import type { ButtonProps } from "./types/index.ts";
 
 // Unstyled button. Defaults to type="button" so it never submits a form by accident.
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({ type = "button", ...rest }, ref) {

@@ -1,10 +1,6 @@
-import type { HTMLAttributes } from "react";
+import type { BadgeProps } from "./types/index.ts";
 
-export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  tone?: string; // exposed as data-tone for the styled layer
-}
-
-// Unstyled inline label.
+// Unstyled inline label; tone is exposed as data-tone.
 export function Badge({ tone, ...rest }: BadgeProps) {
   return <span data-tone={tone} {...rest} />;
 }

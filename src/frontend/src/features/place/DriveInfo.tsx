@@ -1,9 +1,10 @@
 import { Badge } from "../../components/ui/index.ts";
-import { driveView } from "../../format.ts";
-import type { Drive } from "../../types.ts";
+import { driveView } from "./format.ts";
+import type { DriveInfoProps } from "./types/index.ts";
+import "./styles/DriveInfo.css";
 
 // Expected car time when the backend checked it, else a "check it yourself" badge.
-export function DriveInfo({ drive }: { drive: Drive }) {
+export function DriveInfo({ drive }: DriveInfoProps) {
   const view = driveView(drive);
   if (!view.verified) {
     return (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ChatError, checkHealth, sendChat } from "../../api.ts";
-import { toAssistantMessage } from "../../format.ts";
-import type { ChatMessage } from "../../types.ts";
+import { ChatError, checkHealth, sendChat } from "../../api/index.ts";
+import { toAssistantMessage } from "./format.ts";
+import type { ChatMessage } from "./types/index.ts";
 
 // Transcript, session and server state of one chat, and the actions on it.
 export function useChat(welcome: ChatMessage) {

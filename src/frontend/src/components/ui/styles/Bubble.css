@@ -18,7 +18,7 @@
 }
 .bubble.follow { color: var(--color-ink-2); font-size: var(--text-sm); box-shadow: none; background: var(--color-card); border: var(--rule-hair) solid var(--color-rule); }
 .bubble.error {
-  background: color-mix(in oklab, var(--color-accent-3) 20%, var(--color-card));
+  background: var(--tint-bad);
   color: var(--color-ink);
   box-shadow: none;
 }

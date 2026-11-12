@@ -1,0 +1,26 @@
+/* features/place/FacilityGrid: cells from .soft-cell (commonStyle), tinted by data-tone */
+.facilities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-xs);
+}
+.facility {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  padding: var(--space-sm);
+  color: var(--color-ink);
+}
+.facility-label { font-size: var(--text-sm); color: var(--color-ink-2); }
+.facility strong { font-weight: 600; }
+.facility[data-tone="yes"] { background: var(--tint-good); }
+.facility[data-tone="no"] { background: var(--tint-bad); }
+.facility[data-tone="fail"] { background: var(--tint-notice); }
+
+@media (max-width: 480px) {
+  .facilities { gap: var(--space-2xs); }
+  .facility { padding: var(--space-xs); }
+}

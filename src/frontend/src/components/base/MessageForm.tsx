@@ -1,19 +1,6 @@
-import type { ReactNode, Ref } from "react";
 import { Button } from "./Button.tsx";
 import { TextField } from "./TextField.tsx";
-
-export interface MessageFormProps {
-  value: string;
-  onValueChange: (value: string) => void;
-  onSend: (text: string) => void;
-  busy?: boolean; // a send is in flight: submitting is blocked, the input stays usable
-  submitLabel: ReactNode;
-  inputLabel: string;
-  placeholder?: string;
-  maxLength?: number;
-  inputRef?: Ref<HTMLInputElement>;
-  classNames?: { root?: string; input?: string; submit?: string };
-}
+import type { MessageFormProps } from "./types/index.ts";
 
 // Unstyled one-line message form: text field + send button.
 // Blocks empty / whitespace-only sends and sends while busy.

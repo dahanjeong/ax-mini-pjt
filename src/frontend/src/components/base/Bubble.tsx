@@ -1,9 +1,4 @@
-import type { HTMLAttributes } from "react";
-
-export interface BubbleProps extends HTMLAttributes<HTMLDivElement> {
-  from: string; // who said it, exposed as data-from
-  follow?: boolean; // a follow-up bubble in the same turn, exposed as data-follow
-}
+import type { BubbleProps } from "./types/index.ts";
 
 // Unstyled chat bubble.
 export function Bubble({ from, follow = false, ...rest }: BubbleProps) {

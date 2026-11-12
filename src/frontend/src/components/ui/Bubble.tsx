@@ -1,10 +1,7 @@
-import { Bubble as BaseBubble, cx, type BubbleProps as BaseBubbleProps } from "../base/index.ts";
-import type { Role } from "../../types.ts";
-import "./Bubble.css";
-
-export interface BubbleProps extends BaseBubbleProps {
-  from: Role;
-}
+import { Bubble as BaseBubble, cx } from "../base/index.ts";
+import type { BubbleProps } from "./types/index.ts";
+import "./styles/commonStyle.css";
+import "./styles/Bubble.css";
 
 // Chat bubble: user (dark, right), assistant (card, left), error (coral).
 // A follow-up bubble is quieter than the first one of the turn.

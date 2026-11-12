@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./styles.css"; // tokens and reset first; component styles load after it with their components
+import "./styles/global.css"; // tokens and reset first; component styles load after it with their components
 import App from "./App.tsx";
 
 const root = document.getElementById("root");

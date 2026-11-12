@@ -1,5 +1,6 @@
-// Pure display helpers (tested with `npm test`).
-import type { ChatMessage, ChatResponse, Choice, Drive, Dust, ReviewSource, Weather } from "./types.ts";
+// Pure display helpers for a place card (tested with `npm test`).
+import type { Drive, Dust, ReviewSource, Weather } from "../../api/index.ts";
+import type { DriveView, FacilityTone, SourceLink } from "./types/format.ts";
 
 const FAIL = "정보를 불러오지 못함";
 const NO_DUST = "미세먼지 예보 없음";
@@ -37,8 +38,6 @@ export function settingLabel(io: string | null | undefined): string {
   return io === "indoor" ? "실내" : io === "outdoor" ? "야외" : "실내/야외 미상";
 }
 
-export type FacilityTone = "yes" | "no" | "fail" | "unknown";
-
 export function facilityTone(status: string): FacilityTone {
   if (status === "있음") return "yes";
   if (status === "없음") return "no";
@@ -56,12 +55,6 @@ export function failedText(sources: string[] | null | undefined): string {
   if (!sources || sources.length === 0) return "";
   const labels = [...new Set(sources.map((s) => SOURCE_LABELS[s] || s))];
   return `일부 정보를 불러오지 못했어요: ${labels.join(", ")}`;
-}
-
-export interface DriveView {
-  label: string;
-  verified: boolean;
-  basis: string; // e.g. "11월 14일 09:00 출발 기준", "" when unknown
 }
 
 // "2026-11-14T09:00" -> "11월 14일 09:00 출발 기준"
@@ -82,12 +75,6 @@ export function driveView(d: Drive | null | undefined): DriveView {
   return { label: DRIVE_UNVERIFIED, verified: false, basis };
 }
 
-export interface SourceLink {
-  href: string;
-  kind: string;
-  title: string;
-}
-
 // Review links to show under the summary; anything but http(s) is dropped.
 export function sourceLinks(sources: ReviewSource[] | null | undefined): SourceLink[] {
   return (sources || [])
@@ -97,25 +84,4 @@ export function sourceLinks(sources: ReviewSource[] | null | undefined): SourceL
 
 export function summaryLines(lines: string[] | null | undefined): string[] {
   return (lines || []).filter((l) => l && l !== FAIL);
-}
-
-// One /chat response -> one assistant message for the transcript.
-export function toAssistantMessage(view: ChatResponse): ChatMessage {
-  const texts = view.messages && view.messages.length ? view.messages : view.reply ? [view.reply] : [];
-  const pool = view.reference_candidates && view.reference_candidates.length
-    ? view.reference_candidates
-    : view.candidates || [];
-  const choices: Choice[] = pool.map((c, i) => ({
-    label: c.address ? `${c.name} (${c.address})` : c.name,
-    send: String(i + 1),
-  }));
-  // the backend often repeats the notice at the start of the reply: show it only once
-  const notice = view.notice && !texts.some((t) => t.includes(view.notice as string)) ? view.notice : null;
-  return {
-    role: "assistant",
-    texts,
-    notice,
-    cards: view.result_cards || [],
-    choices: view.status === "ask" ? choices : [],
-  };
 }

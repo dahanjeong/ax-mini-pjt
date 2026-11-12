@@ -1,14 +1,10 @@
 import { useId } from "react";
 import { Tile, TileGroup } from "../../components/ui/index.ts";
-import "./chat.css";
-
-interface Props {
-  examples: string[];
-  onPick: (text: string) => void;
-}
+import type { ExampleListProps } from "./types/index.ts";
+import "./styles/ExampleList.css";
 
 // Example questions to send with one tap on the welcome screen.
-export function ExampleList({ examples, onPick }: Props) {
+export function ExampleList({ examples, onPick }: ExampleListProps) {
   const labelId = useId();
   return (
     <>

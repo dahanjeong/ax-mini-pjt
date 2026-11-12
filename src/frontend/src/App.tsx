@@ -3,7 +3,7 @@ import { Composer } from "./components/ui/index.ts";
 import { ExampleList, Hero, Message, PendingTurn, TopBar, useChat } from "./features/chat/index.ts";
 import { useChatScroll } from "./hooks/useChatScroll.ts";
 import { useFocusWhenSettled } from "./hooks/useFocusWhenSettled.ts";
-import type { ChatMessage } from "./types.ts";
+import type { ChatMessage } from "./features/chat/index.ts";
 
 const EXAMPLES = [
   "30개월 아기랑 이번 토요일 오전 10시에 강남역에서 출발해요",

@@ -1,11 +1,7 @@
 import { forwardRef } from "react";
-import { Button as BaseButton, cx, type ButtonProps as BaseButtonProps } from "../base/index.ts";
-import "./Button.css";
-
-export interface ButtonProps extends BaseButtonProps {
-  variant?: "stock" | "primary"; // stock: paper card; primary: the pear send action
-  size?: "md" | "sm";
-}
+import { Button as BaseButton, cx } from "../base/index.ts";
+import type { ButtonProps } from "./types/index.ts";
+import "./styles/Button.css";
 
 // Card-stock button that lifts on hover and presses down on click.
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

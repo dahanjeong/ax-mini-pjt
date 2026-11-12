@@ -1,8 +1,4 @@
-export interface LoadingDotsProps {
-  count?: number;
-  className?: string;
-  dotClassName?: string;
-}
+import type { LoadingDotsProps } from "./types/index.ts";
 
 // Unstyled "working on it" dots; decorative, so hidden from screen readers.
 export function LoadingDots({ count = 3, className, dotClassName }: LoadingDotsProps) {

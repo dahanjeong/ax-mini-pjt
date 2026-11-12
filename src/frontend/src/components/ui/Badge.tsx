@@ -1,14 +1,9 @@
-import { Badge as BaseBadge, cx, type BadgeProps as BaseBadgeProps } from "../base/index.ts";
-import "./Badge.css";
-
-// good: mint · caution: sand · bad: coral · accent: pear · muted: quiet grey · neutral: paper
-export type BadgeTone = "neutral" | "good" | "caution" | "bad" | "accent" | "muted";
-
-export interface BadgeProps extends Omit<BaseBadgeProps, "tone"> {
-  tone?: BadgeTone;
-}
+import { Badge as BaseBadge, cx } from "../base/index.ts";
+import type { BadgeProps } from "./types/index.ts";
+import "./styles/commonStyle.css";
+import "./styles/Badge.css";
 
 // Pill label.
 export function Badge({ tone = "neutral", className, ...rest }: BadgeProps) {
-  return <BaseBadge tone={tone} className={cx("badge", className)} {...rest} />;
+  return <BaseBadge tone={tone} className={cx("pill", "badge", className)} {...rest} />;
 }
