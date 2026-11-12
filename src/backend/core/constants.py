@@ -7,3 +7,7 @@ NO_DUST = "미세먼지 예보 없음"
 
 FACILITY_KEYS = ("nursing_room", "stroller_rental", "parking")
 SUIT_RANK = {"적합": 0, "보통": 1, "부적합": 2}
+
+# drive-time check (Kakao Mobility directions) on the radius-filtered picks
+DRIVE_CONFIRMED = "확인됨"
+DRIVE_UNVERIFIED = "이동시간 확인 필요"

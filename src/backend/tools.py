@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 API_TIMEOUT_S = 5.0          # public data / search APIs
@@ -34,6 +35,10 @@ class Providers:
     keyword_search: Optional[Callable[[str, Optional[float], Optional[float], Optional[float]], list[dict]]] = None
     # embed(texts) -> one vector per text (Bedrock embeddings)
     embed: Optional[Callable[[list[str]], list[list[float]]]] = None
+    # optional (travel-time check); None -> radius-filtered picks are shown as unverified
+    # drive_minutes(origin_lat, origin_lng, dest_lat, dest_lng, departure_time) -> expected car
+    #   minutes when leaving at departure_time (datetime, KST)
+    drive_minutes: Optional[Callable[[float, float, float, float, datetime], float]] = None
 
 
 def call_api(fn: Callable, *args, timeout: Optional[float] = None) -> Any:

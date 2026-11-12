@@ -1,7 +1,7 @@
 # 미니 PJT: 아기랑 나들이 (Baby Outing Chat)
 
 ## 무엇을 푸나
-아기와 나들이 갈 곳을 고를 때 거리·수유실/유모차/주차·날씨·미세먼지·후기를 여러 앱과 블로그에서 따로 찾아 맞춰 봐야 하는 번거로움을, 월령·출발지·날짜만 말하면 조건에 맞는 장소 5곳을 한 번에 추천하는 채팅으로 해결한다.
+아기와 나들이 갈 곳을 고를 때 거리·수유실/유모차/주차·날씨·미세먼지·후기를 여러 앱과 블로그에서 따로 찾아 맞춰 봐야 하는 번거로움을, 월령·출발지·날짜·출발 시각만 말하면 조건에 맞는 장소 5곳을 한 번에 추천하는 채팅으로 해결한다.
 
 > 서비스 스펙 상세: [SERVICE.md](SERVICE.md) · 프로젝트 구조: [docs/project-structure.md](docs/project-structure.md) · API 스펙: [docs/api-spec.md](docs/api-spec.md) · 개발 문서: [docs/](docs/)
 
@@ -21,7 +21,7 @@
 - answer_relevancy: 0.XX
 
 ## 인-아웃 세트 통과율 (자체 평가)
-인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (20건, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
+인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (25건 — 1~20번은 1차, 21~25번은 출발 시각 필수화로 추가, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
 - 1차 (Day 9 종료): 12 / 20 통과 — [evaluation/round1_report.md](evaluation/round1_report.md)
 - 2차 (Day 10 개선 후): XX / XX 통과 — [evaluation/round2_report.md](evaluation/round2_report.md)
 - 개선폭: +XX 건 (주요 개선 사항: ...)

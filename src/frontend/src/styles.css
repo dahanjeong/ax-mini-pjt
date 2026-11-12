@@ -311,6 +311,38 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .failed { color: var(--color-muted); font-size: var(--text-sm); }
 
+.drive { color: var(--color-ink-2); }
+.drive-basis { color: var(--color-muted); }
+.drive::before { content: "·"; margin-inline-end: var(--space-xs); color: var(--color-muted); }
+.drive-unverified {
+  background: color-mix(in oklab, var(--color-sand) 40%, var(--color-card));
+  color: var(--color-ink);
+  cursor: help;
+}
+
+.sources { display: grid; gap: var(--space-2xs); font-size: var(--text-sm); }
+.sources-label { color: var(--color-muted); }
+.sources ul { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2xs); }
+.sources a {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: baseline;
+  min-width: 0;
+  color: var(--color-ink-2);
+  text-decoration: none;
+}
+.sources a:hover .source-title,
+.sources a:focus-visible .source-title { text-decoration: underline; color: var(--color-ink); }
+.source-kind {
+  flex: none;
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-xs);
+  background: var(--color-paper-3);
+  font-size: var(--text-xs, 0.75rem);
+}
+.source-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources a::after { content: "↗"; flex: none; color: var(--color-muted); }
+
 /* ---------- composer ---------- */
 .composer {
   position: sticky;

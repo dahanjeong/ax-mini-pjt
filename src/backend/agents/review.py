@@ -21,8 +21,22 @@ from ..tools import Providers, guarded
 MAX_REVIEWS = 10
 MIN_REVIEWS = 3
 SUMMARY_LINES = 3
+MAX_SOURCES = 3
 # category rule first; types not listed are ambiguous -> LLM
 INDOOR_RULE = {"tourapi:14": "indoor", "kakao:CT1": "indoor", "kakao:KIDS": "indoor", "kakao:PARK": "outdoor"}
+
+
+def review_sources(reviews: list[dict], n: int = MAX_SOURCES) -> list[dict]:
+    """The first `n` reviews the summary was written from, as links: [{title, link, source}].
+    Only http(s) links are kept (the text is untrusted)."""
+    out = []
+    for r in reviews:
+        link = r.get("link") or ""
+        if isinstance(link, str) and link.startswith(("https://", "http://")):
+            out.append({"title": str(r.get("title") or ""), "link": link, "source": r.get("source") or ""})
+        if len(out) == n:
+            break
+    return out
 
 
 def indoor_by_rule(place: dict):
@@ -41,6 +55,7 @@ class ReviewState(TypedDict, total=False):
     review_insufficient: bool
     age_suitability: str
     review_summary: list[str]
+    review_sources: list[dict]      # links of the reviews the summary came from
     facility_mentions: dict
     mentions_failed: bool           # reviews or judge failed -> facility fallback unavailable
     indoor_outdoor: str
@@ -74,6 +89,7 @@ def build_graph(prov: Providers):
         return {
             "age_suitability": suit if suit in SUIT_RANK else "보통",
             "review_summary": review_summary,
+            "review_sources": review_sources(reviews),
             "facility_mentions": result.get("facility_mentions") or {},
             "mentions_failed": bool(state.get("reviews_failed")) or judge_failed,
             "indoor_outdoor": indoor_by_rule(state["place"]),
@@ -100,7 +116,7 @@ def build_graph(prov: Providers):
 
 
 _OUTPUT_KEYS = ("review_evidence_count", "review_insufficient", "age_suitability", "review_summary",
-                "facility_mentions", "mentions_failed", "indoor_outdoor")
+                "review_sources", "facility_mentions", "mentions_failed", "indoor_outdoor")
 
 
 def run(graph: Any, *, place: dict, age_months: int) -> dict:

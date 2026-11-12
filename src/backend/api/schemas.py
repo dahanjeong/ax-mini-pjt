@@ -43,6 +43,7 @@ class ChatResponse(BaseModel):
     travels_during_nap: Optional[bool] = None
     departure_location: Optional[dict[str, Any]] = None
     outing_date: Optional[str] = None
+    departure_time: Optional[str] = None
     preference_text: Optional[str] = None
     reference_place: Optional[str] = None
     reference_candidates: list[dict[str, Any]] = []

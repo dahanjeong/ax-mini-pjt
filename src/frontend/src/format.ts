@@ -1,5 +1,5 @@
 // Pure display helpers (tested with `npm test`).
-import type { ChatMessage, ChatResponse, Choice, Dust, Weather } from "./types.ts";
+import type { ChatMessage, ChatResponse, Choice, Drive, Dust, ReviewSource, Weather } from "./types.ts";
 
 const FAIL = "정보를 불러오지 못함";
 const NO_DUST = "미세먼지 예보 없음";
@@ -7,7 +7,11 @@ const NO_DUST = "미세먼지 예보 없음";
 const SOURCE_LABELS: Record<string, string> = {
   tourapi: "관광공사 장소", kakao: "카카오 장소", public_data: "공공 편의시설", naver: "후기",
   kma: "날씨", airkorea: "미세먼지", llm: "AI 판정", embedding: "취향 비교", keyword_search: "키워드 검색",
+  kakao_navi: "이동시간",
 };
+const DRIVE_CONFIRMED = "확인됨";
+const DRIVE_UNVERIFIED = "이동시간 확인 필요";
+const REVIEW_KIND_LABELS: Record<string, string> = { blog: "블로그", cafe: "카페" };
 const FORECAST_LABELS: Record<string, string> = {
   short_term: "단기예보", mid_term: "중기예보", daily: "일별 예보", weekly: "주간 예보",
 };
@@ -52,6 +56,43 @@ export function failedText(sources: string[] | null | undefined): string {
   if (!sources || sources.length === 0) return "";
   const labels = [...new Set(sources.map((s) => SOURCE_LABELS[s] || s))];
   return `일부 정보를 불러오지 못했어요: ${labels.join(", ")}`;
+}
+
+export interface DriveView {
+  label: string;
+  verified: boolean;
+  basis: string; // e.g. "11월 14일 09:00 출발 기준", "" when unknown
+}
+
+// "2026-11-14T09:00" -> "11월 14일 09:00 출발 기준"
+function departureBasis(when: string | null | undefined): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})T(\d{2}:\d{2})$/.exec(when || "");
+  return m ? `${Number(m[1])}월 ${Number(m[2])}일 ${m[3]} 출발 기준` : "";
+}
+
+// Expected car time (future traffic at the outing's departure time) when the backend
+// checked it, else the "needs checking" label.
+export function driveView(d: Drive | null | undefined): DriveView {
+  const basis = departureBasis(d?.departure_time);
+  if (d && d.status === DRIVE_CONFIRMED && typeof d.minutes === "number") {
+    const m = Math.round(d.minutes);
+    const text = m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ""}` : `${m}분`;
+    return { label: `차로 약 ${text}`, verified: true, basis };
+  }
+  return { label: DRIVE_UNVERIFIED, verified: false, basis };
+}
+
+export interface SourceLink {
+  href: string;
+  kind: string;
+  title: string;
+}
+
+// Review links to show under the summary; anything but http(s) is dropped.
+export function sourceLinks(sources: ReviewSource[] | null | undefined): SourceLink[] {
+  return (sources || [])
+    .filter((s) => s && typeof s.link === "string" && /^https?:\/\//.test(s.link))
+    .map((s) => ({ href: s.link, kind: (s.source && REVIEW_KIND_LABELS[s.source]) || "후기", title: s.title || s.link }));
 }
 
 export function summaryLines(lines: string[] | null | undefined): string[] {

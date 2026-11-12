@@ -34,9 +34,26 @@ GOOD_W = {"forecast_source": "short_term", "precip_prob_max": 10, "temp_max": 20
 GOOD_D = {"pm10_grade": "좋음", "pm25_grade": "보통"}
 
 
-def make_providers(tour=(), kakao=(), suit=None, fac=None, weather=None, dust=None, io=None, sleep=0.0):
+def km_of(lat):
+    return round((lat - 37.5) * 111.195, 1)
+
+
+def make_providers(tour=(), kakao=(), suit=None, fac=None, weather=None, dust=None, io=None, sleep=0.0,
+                   drive=None):
+    """`drive`: {km: minutes} overrides (a value raising Exception = API failure); other places
+    take km * 60 / 45 minutes. drive=False -> no drive-time provider."""
     suit, fac, weather, dust, io = suit or {}, fac or {}, weather or {}, dust or {}, io or {}
-    calls = {"judged": [], "io": []}
+    calls = {"judged": [], "io": [], "drive": []}
+    overrides = drive or {}
+
+    def drive_minutes(o_lat, o_lng, d_lat, d_lng, departure_time):
+        km = km_of(d_lat)
+        calls["drive"].append(km)
+        calls.setdefault("departures", []).append(departure_time)
+        v = overrides.get(km, km * 60 / 45)
+        if isinstance(v, Exception):
+            raise v
+        return v
 
     def judge(place, age, reviews):
         time.sleep(sleep)
@@ -67,6 +84,7 @@ def make_providers(tour=(), kakao=(), suit=None, fac=None, weather=None, dust=No
         dust=lambda lat, lng, d: (time.sleep(sleep), dust.get(round(lat, 3), GOOD_D))[1],
         llm_judge=judge,
         llm_indoor_outdoor=classify,
+        drive_minutes=None if drive is False else drive_minutes,
     )
     return prov, calls
 
@@ -340,7 +358,7 @@ def test_chat_flow_shows_progress_and_cards():
     graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: date(2026, 11, 11)))
     tour = [tp(i, f"장소{i:02d}", 3 + i) for i in range(15)]
     prov, _ = make_providers(tour, sleep=0.05)
-    view = recommendation_turn(graph, "t-flow", "30개월 아기랑 강남역에서 내일 갈게요", prov)
+    view = recommendation_turn(graph, "t-flow", "30개월 아기랑 강남역에서 내일 오전 10시 갈게요", prov)
     assert view["status"] == "ready"
     assert view["elapsed_s"] >= 0
     assert len(view["result_cards"]) == 5
@@ -358,6 +376,109 @@ def test_chat_flow_asks_back_without_running_recommendation():
 def test_nap_flag_flows_into_radius_in_chat():
     graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: date(2026, 11, 11)))
     prov, _ = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
-    recommendation_turn(graph, "t-nap", "10개월 아기, 강남역에서 내일", prov)
+    recommendation_turn(graph, "t-nap", "10개월 아기, 강남역에서 내일 오전 10시", prov)
     view = recommendation_turn(graph, "t-nap", "네", prov)
     assert view["status"] == "ready" and view["max_drive_hours"] == 2.0
+
+
+# ------------------------------------------------------------------ drive-time check
+
+from backend.agents.review import review_sources  # noqa: E402
+from backend.core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED  # noqa: E402
+from backend.supervisor.cards import build_card  # noqa: E402
+from backend.supervisor.intent import SCOPE_ENVIRONMENT  # noqa: E402
+from backend.supervisor.pipeline import _STORED_KEYS, build_pipeline, departure_time_for, run_pipeline  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+
+def test_place_over_drive_limit_is_dropped_and_next_one_picked():
+    # 30 months -> 120 min limit; 장소0 is close but a 150-minute drive
+    prov, calls = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(6)], drive={5.0: 150})
+    res = run(prov)
+    assert "장소0" not in names(res) and len(names(res)) == 5
+    assert all(c["drive"]["status"] == DRIVE_CONFIRMED for c in res["result_cards"])
+    assert res["result_cards"][0]["drive"]["minutes"] == pytest.approx(6 * 60 / 45)
+    assert len(calls["drive"]) == 6
+
+
+def test_drive_check_failure_marks_place_unverified():
+    prov, _ = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)], drive={5.0: RuntimeError("down")})
+    res = run(prov)
+    card = res["result_cards"][names(res).index("장소0")]
+    assert card["drive"]["status"] == DRIVE_UNVERIFIED and card["drive"]["minutes"] is None
+    assert "kakao_navi" in res["failed_sources"]
+    assert build_card(card)["drive"]["status"] == DRIVE_UNVERIFIED
+
+
+def test_without_drive_provider_radius_picks_are_unverified():
+    prov, _ = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)], drive=False)
+    res = run(prov)
+    assert len(names(res)) == 5
+    assert all(c["drive"]["status"] == DRIVE_UNVERIFIED for c in res["result_cards"])
+
+
+def test_widened_places_need_a_confirmed_drive_time():
+    # 70 km is outside the 61.5 km age radius: shown only with a confirmed drive time
+    tour = [tp(i, f"가까움{i}", 10 + i) for i in range(3)] + [tp(i + 10, f"먼곳{i}", 70 + i) for i in range(4)]
+    prov, _ = make_providers(tour, drive=False)
+    res = run(prov)
+    assert res["radius_expanded"] and sorted(names(res)) == ["가까움0", "가까움1", "가까움2"]
+    assert "3곳" in res["notice"]
+
+
+def test_drive_time_is_estimated_for_09_on_the_outing_date():
+    prov, calls = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
+    res = recommend(prov, age_months=30, departure=DEP, outing_date="2099-05-02")
+    assert {d.strftime("%Y-%m-%d %H:%M") for d in calls["departures"]} == {"2099-05-02 09:00"}
+    assert res["result_cards"][0]["drive"]["departure_time"] == "2099-05-02T09:00"
+    assert build_card(res["result_cards"][0])["drive"]["departure_time"] == "2099-05-02T09:00"
+
+
+def test_departure_time_is_now_when_09_has_passed_today():
+    kst = timezone(timedelta(hours=9))
+    now = datetime(2026, 11, 12, 13, 20, 30, tzinfo=kst)
+    assert departure_time_for("2026-11-12", now) == datetime(2026, 11, 12, 13, 21, tzinfo=kst)
+    assert departure_time_for("2026-11-14", now) == datetime(2026, 11, 14, 9, 0, tzinfo=kst)
+
+
+def test_date_change_rechecks_drive_times_but_preference_change_reuses_them():
+    prov, calls = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
+    pipe = build_pipeline(prov)
+    first = run_pipeline(pipe, scope="full", departure=DEP, age_months=30, outing_date="2099-05-02")
+    stored = {k: first.get(k) for k in _STORED_KEYS}
+    n = len(calls["drive"])
+    run_pipeline(pipe, scope="rerank", departure=DEP, age_months=30, outing_date="2099-05-02", stored=stored)
+    assert len(calls["drive"]) == n                      # same departure time: reused
+    again = run_pipeline(pipe, scope=SCOPE_ENVIRONMENT, departure=DEP, age_months=30, outing_date="2099-05-03",
+                         stored=stored)
+    assert len(calls["drive"]) == n + 5                  # new date: future traffic differs, re-checked
+    assert {c["drive"]["departure_time"] for c in again["result_cards"]} == {"2099-05-03T09:00"}
+
+
+# ------------------------------------------------------------------ review sources
+
+def test_review_sources_keep_only_web_links_and_at_most_three():
+    reviews = [{"title": "a", "link": "javascript:alert(1)", "source": "blog"}] + [
+        {"title": f"t{i}", "link": f"https://blog.naver.com/x/{i}", "source": "blog"} for i in range(5)]
+    out = review_sources(reviews)
+    assert [s["link"] for s in out] == [f"https://blog.naver.com/x/{i}" for i in range(3)]
+
+
+def test_card_shows_review_sources_as_links():
+    prov, _ = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
+    place = run(prov)["result_cards"][0]
+    card = build_card({**place, "review_sources": [
+        {"title": "  서울숲  아기랑 ", "link": "https://cafe.naver.com/a/1", "source": "cafe"},
+        {"title": "x", "link": "data:text/html,hi", "source": "blog"},
+        {"title": "", "link": "https://blog.naver.com/b/2", "source": "evil"},
+    ]})
+    assert card["review_sources"] == [
+        {"title": "서울숲 아기랑", "link": "https://cafe.naver.com/a/1", "source": "cafe"},
+        {"title": "https://blog.naver.com/b/2", "link": "https://blog.naver.com/b/2", "source": None},
+    ]
+
+
+def test_drive_time_uses_the_given_departure_time():
+    prov, calls = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
+    recommend(prov, age_months=30, departure=DEP, outing_date="2099-05-02", departure_time="14:30")
+    assert {d.strftime("%Y-%m-%d %H:%M") for d in calls["departures"]} == {"2099-05-02 14:30"}

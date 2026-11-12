@@ -1,6 +1,6 @@
 """Intent: input extraction and intent judgement for the supervisor (pure functions).
 
-- parse_*            rule-based slot extraction (age, date, nap, departure)
+- parse_*            rule-based slot extraction (age, date, departure time, nap, departure)
 - parse_preference / parse_reference
                      rule fallback for the optional preference sentence and the
                      reference place of a "similar place" request (the LLM
@@ -86,6 +86,53 @@ def parse_date(text: str, today: date) -> Optional[date]:
     return None
 
 
+# ---- departure time ("HH:MM")
+
+NOW = "now"                      # parse_time result for "지금 / 바로": resolved by the supervisor
+# vague answers to the departure-time question -> a representative time
+_VAGUE_TIMES = (("새벽", "06:00"), ("아침", "09:00"), ("오전", "10:00"), ("점심", "12:00"), ("낮", "13:00"),
+                ("오후", "14:00"), ("저녁", "18:00"))
+_TIME_PERIOD = r"(오전|오후|아침|낮|점심|저녁|밤|새벽)"
+_TIME_HM = re.compile(rf"(?:{_TIME_PERIOD}\s*)?(\d{{1,2}})\s*시(?!간)\s*(?:(\d{{1,2}})\s*분|(반))?")
+_TIME_COLON = re.compile(r"(?<![\d.])([01]?\d|2[0-3])\s*:\s*([0-5]\d)(?!\d)")
+_TIME_NOW = re.compile(r"지금|바로|당장|곧")
+_TIME_TOKENS = re.compile(rf"(?:{_TIME_PERIOD}\s*)?\d{{1,2}}\s*시(?!간)\s*(?:\d{{1,2}}\s*분|반)?(?:쯤|경|에)?|"
+                          r"(?<![\d.])(?:[01]?\d|2[0-3])\s*:\s*[0-5]\d(?!\d)")
+
+
+def parse_time(text: str, awaiting: Optional[str] = None) -> Optional[str]:
+    """Departure time as "HH:MM", NOW for "지금 / 바로", None when absent or unclear.
+    A bare 1~6시 means the afternoon (13~18시: nobody leaves with a baby at 3 a.m.).
+    Vague words ("아침", "오후") count only as the answer to the departure-time question."""
+    m = _TIME_COLON.search(text)
+    if m:
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+    m = _TIME_HM.search(text)
+    if m:
+        period, h = m.group(1), int(m.group(2))
+        minute = 30 if m.group(4) else int(m.group(3) or 0)
+        if h > 24 or minute > 59:
+            return None
+        if period in ("오후", "저녁", "밤") and h < 12:
+            h += 12
+        elif period in ("오전", "아침", "새벽", "밤") and h == 12:
+            h = 0
+        elif period is None and 1 <= h <= 6:
+            h += 12
+        if period == "낮" and 1 <= h <= 6:
+            h += 12
+        return f"{h % 24:02d}:{minute:02d}"
+    if awaiting == "time":
+        if _TIME_NOW.search(text):
+            return NOW
+        for word, hhmm in _VAGUE_TIMES:
+            if word in text:
+                return hhmm
+    elif re.search(r"(?:지금|바로|당장)\s*(?:바로\s*)?출발", text):
+        return NOW
+    return None
+
+
 _DATE_TOKENS = re.compile(
     r"\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?|\d{1,2}\s*월\s*\d{1,2}\s*일?|\d+\s*일\s*(?:뒤|후)|"
     r"글피|모레|내일|오늘|어제|그제|그저께|(?:다음\s*주|담주|이번\s*주|금주)?\s*[월화수목금토일]요일|"
@@ -118,7 +165,7 @@ def _drop_leading_particles(cand: str) -> str:
 
 
 def parse_departure(text: str, awaiting: Optional[str]) -> Optional[str]:
-    cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", text)))
+    cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", _TIME_TOKENS.sub(" ", text))))
     m = re.search(r"출발지\s*(?:는|은|:)?\s*([^\s,.]+(?: [^\s,.]+)?)", cleaned)
     if m:
         cand = re.sub(r"(?:이에요|예요|입니다|이요|에서)$", "", m.group(1).strip())
@@ -174,7 +221,7 @@ def parse_preference(text: str) -> Optional[str]:
     """The preference sentence itself (slot words removed), when it mentions a mood/feature."""
     if not _PREF_WORDS.search(text):
         return None
-    cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", text)))
+    cleaned = _NAP_TOKENS.sub(" ", _AGE_TOKENS.sub(" ", _DATE_TOKENS.sub(" ", _TIME_TOKENS.sub(" ", text))))
     cleaned = re.sub(r"[^\s,.]+\s*에서\s*(?:출발[가-힣]*)?", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.!?")
     return cleaned or None
@@ -186,7 +233,7 @@ _CHOICE_AWAITS = ("departure_choice", "reference_choice")
 _RESET = re.compile(r"처음부터|다시\s*시작|새로\s*시작|리셋|초기화")
 _ORDINALS = {"첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5}
 _DETAIL_WORDS = re.compile(r"자세히|더\s*알려|어때|어떤\s*곳|정보|설명|궁금")
-_IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷")
+_IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷|\d\s*시(?!간)")
 
 
 def detail_index(text: str, card_names: list[str]) -> Optional[int]:
@@ -242,6 +289,7 @@ def search_snapshot(state: dict) -> dict:
         "travels_during_nap": bool(state.get("travels_during_nap")),
         "departure": [dep.get("lat"), dep.get("lng")],
         "outing_date": state.get("outing_date"),
+        "departure_time": state.get("departure_time"),
         "preference_text": state.get("preference_text"),
         "reference_place": state.get("reference_place"),
     }
@@ -258,6 +306,8 @@ def plan_scope(searched: Optional[dict], current: dict) -> tuple[str, str]:
         return "change_age", SCOPE_FULL
     if current["outing_date"] != searched["outing_date"]:
         return "change_date", SCOPE_ENVIRONMENT
+    if current.get("departure_time") != searched.get("departure_time"):
+        return "change_time", SCOPE_RERANK          # only the drive times change
     if current["reference_place"] and current["reference_place"] != searched["reference_place"]:
         return "similar_place", SCOPE_RERANK
     if current["preference_text"] != searched["preference_text"]:

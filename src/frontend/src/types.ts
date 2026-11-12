@@ -33,6 +33,18 @@ export interface PreferenceMatch {
   evidence: Evidence[];
 }
 
+export interface ReviewSource {
+  title: string;
+  link: string; // http(s) only
+  source: "blog" | "cafe" | null;
+}
+
+export interface Drive {
+  status: string; // 확인됨 · 이동시간 확인 필요
+  minutes: number | null; // expected car minutes when 확인됨
+  departure_time: string | null; // "YYYY-MM-DDTHH:MM" (KST) the estimate assumes leaving at
+}
+
 export interface PlaceCardData {
   name: string;
   distance_km: number;
@@ -44,9 +56,11 @@ export interface PlaceCardData {
   is_bad_day: boolean;
   warnings: string[];
   review_summary: string[];
+  review_sources: ReviewSource[];
   failed_sources: string[];
   preference_match: PreferenceMatch | null;
   includes: string[];
+  drive: Drive;
 }
 
 export interface Candidate {
@@ -70,6 +84,7 @@ export interface ChatResponse {
   travels_during_nap: boolean | null;
   departure_location: Candidate | null;
   outing_date: string | null;
+  departure_time: string | null; // "HH:MM" (KST)
   preference_text: string | null;
   reference_place: string | null;
   reference_candidates: Candidate[];

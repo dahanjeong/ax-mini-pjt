@@ -10,3 +10,4 @@
 | 가드레일 | Day 5 | 필수 정보(월령·낮잠·출발지·날짜) 되묻기, 근거 없는 내용은 "정보 없음"으로 표시(지어내기 금지), 후기·사용자 메시지 속 지시문 무시(프롬프트 인젝션 방어), 서비스 범위 밖 질문 거절, 프론트엔드에 비밀값 비노출(테스트로 확인). | `agent.py`, `prompts/`, `tests/test_frontend_no_secrets.py` |
 | 미들웨어 (재시도) | Day 5 | LLM 호출의 429·5xx는 지수 백오프로 재시도한 뒤 다른 리전·모델로 넘어가고, 모델별 동시 호출 수를 제한한다. 외부 API 호출은 모두 시간 제한을 둔다. 대화 요약·PII 마스킹은 적용하지 않았다. | `integrations/bedrock.py`, `tools.py` |
 | Multi-Agent Supervisor | Day 6 | 슈퍼바이저 그래프가 대화를 이해하고 필요한 정보를 모은 뒤 장소 검색·환경(날씨·미세먼지)·후기·취향 서브 에이전트에 위임한다. 후보별 평가는 `Send`로 병렬 실행한다. | `agent.py`, `supervisor/pipeline.py`, `agents/` |
+| 평가 (LLM-as-Judge) | Day 7 | 인-아웃 세트 20건(`evaluation/test_queries.csv`)을 실제 서비스로 돌리고, 도구 호출은 규칙으로, 답변은 Sonnet 채점기로 항목별(기대 특성 충족·금지 사항 위반) 판정한다. RAGAS는 쓰지 않는다. | `evaluation/run_eval.py`, [evaluation.md](evaluation.md) |

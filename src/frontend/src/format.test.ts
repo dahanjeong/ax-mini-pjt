@@ -11,7 +11,7 @@ function response(fields: Partial<ChatResponse>): ChatResponse {
   return {
     session_id: "s", status: "ask", intent: "ask", reply: null, messages: [], notice: null, missing_inputs: [],
     candidates: [], available_date_range: null, baby_age_months: null, travels_during_nap: null,
-    departure_location: null, outing_date: null, preference_text: null, reference_place: null,
+    departure_location: null, outing_date: null, departure_time: null, preference_text: null, reference_place: null,
     reference_candidates: [], result_cards: null, max_drive_hours: null, radius_km: null, radius_expanded: null,
     failed_sources: null, elapsed_s: null, preference_status: null, ...fields,
   };
@@ -72,4 +72,28 @@ test("assistant message from a /chat response", () => {
     messages: ["처음부터 다시 할게요. 아기는 몇 개월인가요? (0~72개월)"],
   }));
   assert.equal(reset.notice, null);                  // already in the reply: not shown twice
+});
+
+test("drive time and review source links", async () => {
+  const { driveView, sourceLinks } = await import("./format.ts");
+  const at = "2026-11-14T09:00";
+  assert.deepEqual(driveView({ status: "확인됨", minutes: 18.4, departure_time: at }),
+    { label: "차로 약 18분", verified: true, basis: "11월 14일 09:00 출발 기준" });
+  assert.equal(driveView({ status: "확인됨", minutes: 95, departure_time: at }).label, "차로 약 1시간 35분");
+  assert.equal(driveView({ status: "확인됨", minutes: 60, departure_time: null }).label, "차로 약 1시간");
+  assert.equal(driveView({ status: "확인됨", minutes: 60, departure_time: null }).basis, "");
+  assert.deepEqual(driveView({ status: "이동시간 확인 필요", minutes: null, departure_time: at }),
+    { label: "이동시간 확인 필요", verified: false, basis: "11월 14일 09:00 출발 기준" });
+  assert.deepEqual(driveView(undefined), { label: "이동시간 확인 필요", verified: false, basis: "" });
+  assert.deepEqual(
+    sourceLinks([
+      { title: "서울숲 아기랑", link: "http://localhost/blog/1", source: "blog" },
+      { title: "x", link: "javascript:alert(1)", source: "cafe" },
+      { title: "", link: "http://localhost/cafe/2", source: null },
+    ]),
+    [
+      { href: "http://localhost/blog/1", kind: "블로그", title: "서울숲 아기랑" },
+      { href: "http://localhost/cafe/2", kind: "후기", title: "http://localhost/cafe/2" },
+    ],
+  );
 });

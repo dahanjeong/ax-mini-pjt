@@ -92,7 +92,7 @@ def test_preference_and_reference_rules():
 
 # ---------------------------------------------------------------- conversation
 
-FIRST = "30개월 아기랑 강남역에서 내일 갈게요"
+FIRST = "30개월 아기랑 강남역에서 내일 오전 10시에 갈게요"
 
 
 def test_first_complete_message_runs_full_search(session):
@@ -107,7 +107,7 @@ def test_date_change_refreshes_environment_only(session):
     say = new()
     say(FIRST)
     calls.clear()
-    v = say("모레로 바꿔줘")
+    v = say("모레 오전 10시로 바꿔줘")
     assert v["intent"] == "change_date" and v["outing_date"] == "2026-11-13"
     assert calls["tour_search"] == 0 and calls["facilities"] == 0 and calls["reviews"] == 0
     assert calls["llm_judge"] == 0
@@ -176,12 +176,12 @@ def test_invalid_change_keeps_previous_results(session):
     new, calls = session
     say = new()
     first = say(FIRST)
-    v = say("어제로 바꿔줘")
+    v = say("어제 오전 10시로 바꿔줘")
     assert v["status"] == "ask" and "지난 날짜" in v["notice"]
     calls.clear()
     v = say("1번째 곳 자세히")
     assert first["result_cards"][0]["name"] in v["reply"] and sum(calls.values()) == 0
-    v = say("모레")  # still answering the re-asked date
+    v = say("모레 오전 10시")  # still answering the re-asked date
     assert v["intent"] == "change_date" and v["outing_date"] == "2026-11-13"
 
 
@@ -213,7 +213,7 @@ def test_preference_given_before_required_inputs_is_kept(session):
 
 def test_llm_extractor_supplies_preference_and_reference():
     def extractor(text, awaiting):
-        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일",
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 10시",
                 "preference_text": "넓고 뛰어놀 수 있는 곳", "reference_place": "어린이대공원"}
 
     graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, extractor=extractor))
@@ -221,3 +221,17 @@ def test_llm_extractor_supplies_preference_and_reference():
     v = recommendation_turn(graph, "llm", "그때 거기 같은 데로 가고 싶어", prov)
     assert v["preference_text"] == "넓고 뛰어놀 수 있는 곳"
     assert v["reference_place"] == "어린이대공원"
+
+
+# ---------------------------------------------------------------- departure time
+
+def test_departure_time_change_rechecks_drive_times_only(session):
+    new, calls = session
+    say = new()
+    first = say(FIRST)
+    assert first["departure_time"] == "10:00"
+    calls.clear()
+    v = say("오후 2시로 바꿔줘")
+    assert v["intent"] == "change_time" and v["departure_time"] == "14:00"
+    assert sum(calls.values()) == 0                       # no place / environment / review calls
+    assert {c["drive"]["departure_time"] for c in v["result_cards"]} == {"2026-11-12T14:00"}

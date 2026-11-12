@@ -24,19 +24,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Optional, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from .supervisor.intent import (
-    _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, SCOPE_FULL, _NonNumeric,
-    classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference,
+    _DATE_TOKENS, _NAP_TOKENS, MAX_AGE, MIN_AGE, NOW, SCOPE_FULL, _NonNumeric,
+    classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference, parse_time,
     parse_reference, plan_scope, preference_keywords, search_snapshot,
 )
 from .agents import preference as preference_agent
-from .supervisor.pipeline import _STORED_KEYS, build_pipeline, run_pipeline
+from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED
+from .supervisor.pipeline import _STORED_KEYS, KST, build_pipeline, run_pipeline
 from .tools import Providers
 
 DEFAULT_FORECAST_DAYS = 10
@@ -47,25 +48,26 @@ GeocodeFn = Callable[[str], list[dict]]
 # date_range(today) -> (start, end) covered by the forecast
 DateRangeFn = Callable[[date], tuple[date, date]]
 # optional LLM extractor(message, awaiting) -> partial dict:
-#   age_months, departure_query, date_text, travels_during_nap,
+#   age_months, departure_query, date_text, time_text, travels_during_nap,
 #   preference_text, preference_keywords (list), reference_place
 ExtractorFn = Callable[[str, Optional[str]], dict]
 
-_SLOT_KEYS = ("baby_age_months", "travels_during_nap", "outing_date", "departure_query",
+_SLOT_KEYS = ("baby_age_months", "travels_during_nap", "outing_date", "departure_time", "departure_query",
               "departure_location", "preference_text", "preference_keywords", "reference_place")
 _RESULT_KEYS = ("candidates", "evaluations", "result_cards", "max_drive_hours", "radius_km",
                 "radius_expanded", "failed_sources", "elapsed_s", "searched", "matches",
-                "match_query", "keywords_searched", "preference_status", "reference",
+                "match_query", "keywords_searched", "drive_times", "preference_status", "reference",
                 "reference_candidates", "reference_chosen")
 _CANCEL = re.compile(r"없음|없어요|취소|됐어|괜찮|상관\s*없")
 
 OUT_OF_SCOPE_REPLY = ("저는 아기와 함께 갈 나들이 장소 추천을 도와드려요. "
-                      "아기 월령, 출발지, 날짜를 알려주시면 장소를 찾아볼게요.")
+                      "아기 월령, 출발지, 날짜와 출발 시각을 알려주시면 장소를 찾아볼게요.")
 INTENT_REPLY = {
     "new_search": "입력이 모두 확인됐어요. 추천 장소를 찾아볼게요!",
     "change_departure": "출발지가 바뀌어서 장소를 다시 찾아볼게요.",
     "change_age": "월령·낮잠 조건이 바뀌어서 이동 반경과 적합도를 다시 확인할게요.",
-    "change_date": "날짜를 {date}로 바꿔서 날씨·미세먼지만 다시 확인할게요.",
+    "change_date": "날짜를 {date}로 바꿔서 날씨·미세먼지와 이동시간을 다시 확인할게요.",
+    "change_time": "출발 시각을 {time}으로 바꿔서 이동시간만 다시 확인할게요.",
     "change_preference": "말씀하신 취향을 반영해 순위를 다시 정할게요.",
     "similar_place": "'{ref}'와 비슷한 곳을 기준으로 순위를 다시 정할게요.",
     "no_change": "조건이 그대로라 이전 추천을 다시 보여드릴게요.",
@@ -81,6 +83,7 @@ class Deps:
     geocode: GeocodeFn
     date_range: DateRangeFn = default_date_range
     today: Callable[[], date] = date.today
+    now: Callable[[], datetime] = lambda: datetime.now(KST)    # KST wall clock ("지금 출발")
     extractor: Optional[ExtractorFn] = None
 
 
@@ -92,6 +95,7 @@ class ChatState(TypedDict, total=False):
     departure_location: Optional[dict]
     departure_candidates: list
     outing_date: Optional[str]
+    departure_time: Optional[str]            # "HH:MM" (KST) leaving time, for the drive estimate
     travels_during_nap: Optional[bool]
     nap_asked: bool
     # optional inputs
@@ -102,7 +106,7 @@ class ChatState(TypedDict, total=False):
     reference_candidates: list               # ambiguous lookup: [{"name", "address", "raw"}]
     reference_chosen: Optional[dict]         # raw place picked from reference_candidates
     # turn bookkeeping
-    awaiting: Optional[str]  # age | nap | departure | departure_choice | date | reference | reference_choice
+    awaiting: Optional[str]  # age | nap | departure | departure_choice | date | time | reference | reference_choice
     prev_awaiting: Optional[str]
     has_new_input: bool
     missing_inputs: list
@@ -128,6 +132,7 @@ class ChatState(TypedDict, total=False):
     matches: dict
     match_query: Optional[list]
     keywords_searched: list
+    drive_times: dict
     preference_status: Optional[str]
 
 
@@ -154,6 +159,14 @@ def _fmt(d: date) -> str:
 _FAC_LABELS = {"nursing_room": "수유실", "stroller_rental": "유모차 대여", "parking": "주차"}
 
 
+def _drive_text(c: dict) -> str:
+    d = c.get("drive") or {}
+    if d.get("status") == DRIVE_CONFIRMED and d.get("minutes") is not None:
+        when = (d.get("departure_time") or "").replace("T", " ")
+        return f"차로 약 {round(d['minutes'])}분" + (f" ({when} 출발 기준)" if when else "")
+    return DRIVE_UNVERIFIED
+
+
 def _card_text(i: int, c: dict) -> str:
     io = "실내" if c.get("indoor_outdoor") == "indoor" else "야외"
     fac = " · ".join(f"{_FAC_LABELS.get(k, k)}: {f.get('status')}" for k, f in (c.get("facilities") or {}).items())
@@ -162,7 +175,8 @@ def _card_text(i: int, c: dict) -> str:
     d = c.get("dust") or {}
     dust = d.get("status") or f"PM10 {d.get('pm10_grade')} · PM2.5 {d.get('pm25_grade')}"
     lines = [
-        f"{i + 1}위 {c['name']} ({io}, 직선거리 {round(float(c['distance_km']), 1)}km, 월령 적합도 {c.get('age_suitability')})",
+        f"{i + 1}위 {c['name']} ({io}, 직선거리 {round(float(c['distance_km']), 1)}km, {_drive_text(c)}, "
+        f"월령 적합도 {c.get('age_suitability')})",
         f"편의시설: {fac}",
         f"날씨: {weather}",
         f"미세먼지: {dust}",
@@ -170,6 +184,9 @@ def _card_text(i: int, c: dict) -> str:
     if c.get("warnings"):
         lines.append("주의: " + ", ".join(c["warnings"]))
     lines.append("후기 요약: " + " / ".join(c.get("review_summary") or []))
+    for src in c.get("review_sources") or []:
+        if isinstance(src, dict) and src.get("link"):
+            lines.append(f"후기 출처: {src.get('title') or ''} ({src['link']})")
     m = c.get("preference_match")
     if m:
         ev = " / ".join(e["text"] for e in m.get("evidence") or []) or "근거 문장 없음"
@@ -264,6 +281,18 @@ def build_graph(deps: Deps):
         elif date_unparsed:
             out["outing_date"] = None
             out["notice"] = "날짜를 이해하지 못했어요. 예: 내일, 11월 15일, 2026-11-15"
+
+        # ---- departure time
+        time_val = parse_time(text, awaiting)
+        if time_val is None and llm.get("time_text"):
+            time_val = parse_time(str(llm["time_text"]), awaiting or "time")
+        if time_val == NOW:
+            time_val = deps.now().strftime("%H:%M")
+        if time_val is not None:
+            out["departure_time"] = time_val
+        elif awaiting == "time":
+            out["departure_time"] = None
+            out["notice"] = "출발 시각을 이해하지 못했어요. 예: 오전 9시, 10시 반, 14:00"
 
         # ---- reference place being re-asked
         if awaiting == "reference":
@@ -449,6 +478,27 @@ def build_graph(deps: Deps):
             }
         return {"available_date_range": rng}
 
+    def check_time(state: ChatState) -> ChatState:
+        raw = state.get("departure_time")
+        if not raw:
+            return {
+                "awaiting": "time",
+                "missing_inputs": ["departure_time"],
+                "notice": state.get("notice"),
+                "reply": (state.get("notice") + " " if state.get("notice") else "")
+                + "대략 언제쯤 출발할 예정이신가요? (예: 오전 9시, 10시 반, 오후 2시)",
+            }
+        now = deps.now()
+        if state.get("outing_date") == now.strftime("%Y-%m-%d") and raw < now.strftime("%H:%M"):
+            return {
+                "awaiting": "time",
+                "departure_time": None,
+                "missing_inputs": ["departure_time"],
+                "notice": f"오늘 {raw}은(는) 이미 지난 시각이에요.",
+                "reply": f"오늘 {raw}은(는) 이미 지난 시각이에요. 지금 이후 출발 시각을 알려주세요. (예: 지금 바로, 오후 2시)",
+            }
+        return {}
+
     def check_reference(state: ChatState, config) -> ChatState:
         name = state.get("reference_place")
         if not name:
@@ -496,7 +546,8 @@ def build_graph(deps: Deps):
         intent, scope = plan_scope(state.get("searched"), current)
         if scope != SCOPE_FULL and not state.get("candidates"):
             intent, scope = "new_search", SCOPE_FULL
-        reply = INTENT_REPLY[intent].format(date=state.get("outing_date"), ref=state.get("reference_place"))
+        reply = INTENT_REPLY[intent].format(date=state.get("outing_date"), ref=state.get("reference_place"),
+                                            time=state.get("departure_time"))
         return {
             "status": "ready",
             "intent": intent,
@@ -514,7 +565,8 @@ def build_graph(deps: Deps):
         out = run_pipeline(
             _pipeline_for(prov), scope=state["scope"],
             departure=state["departure_location"], age_months=state["baby_age_months"],
-            outing_date=state["outing_date"], travels_during_nap=bool(state.get("travels_during_nap")),
+            outing_date=state["outing_date"], departure_time=state.get("departure_time"),
+            travels_during_nap=bool(state.get("travels_during_nap")),
             preference_text=state.get("preference_text"), reference=state.get("reference"),
             keywords=state.get("preference_keywords") or [],
             stored={k: state.get(k) for k in _STORED_KEYS},
@@ -536,7 +588,7 @@ def build_graph(deps: Deps):
     for name, fn in (
         ("extract", extract), ("classify", classify), ("reset", reset), ("detail", detail),
         ("out_of_scope", out_of_scope), ("check_age", check_age), ("check_nap", check_nap),
-        ("check_departure", check_departure), ("check_date", check_date),
+        ("check_departure", check_departure), ("check_date", check_date), ("check_time", check_time),
         ("check_reference", check_reference), ("plan", plan),
         ("delegate", delegate),
     ):
@@ -550,7 +602,8 @@ def build_graph(deps: Deps):
     g.add_conditional_edges("check_age", route("check_nap"), {END: END, "check_nap": "check_nap"})
     g.add_conditional_edges("check_nap", route("check_departure"), {END: END, "check_departure": "check_departure"})
     g.add_conditional_edges("check_departure", route("check_date"), {END: END, "check_date": "check_date"})
-    g.add_conditional_edges("check_date", route("check_reference"), {END: END, "check_reference": "check_reference"})
+    g.add_conditional_edges("check_date", route("check_time"), {END: END, "check_time": "check_time"})
+    g.add_conditional_edges("check_time", route("check_reference"), {END: END, "check_reference": "check_reference"})
     g.add_conditional_edges("check_reference", route("plan"), {END: END, "plan": "plan"})
     g.add_edge("plan", "delegate")
     g.add_edge("delegate", END)
@@ -565,6 +618,8 @@ def _missing(state: ChatState, with_age: bool = False) -> list:
         m.append("departure_location")
     if not state.get("outing_date"):
         m.append("outing_date")
+    if not state.get("departure_time"):
+        m.append("departure_time")
     return m
 
 
@@ -592,6 +647,7 @@ def _view(result: dict) -> dict:
         "travels_during_nap": result.get("travels_during_nap"),
         "departure_location": result.get("departure_location"),
         "outing_date": result.get("outing_date"),
+        "departure_time": result.get("departure_time"),
         "preference_text": result.get("preference_text"),
         "reference_place": result.get("reference_place"),
         "reference_candidates": [{"name": c.get("name"), "address": c.get("address")}

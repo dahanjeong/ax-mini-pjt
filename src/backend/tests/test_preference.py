@@ -216,7 +216,7 @@ def test_embedding_failure_falls_back_with_notice():
 
 # ---------------------------------------------------------------- supervisor flow
 
-FIRST = "30개월 아기랑 강남역에서 내일 갈게요"
+FIRST = "30개월 아기랑 강남역에서 내일 오전 10시에 갈게요"
 
 
 @pytest.fixture
@@ -258,7 +258,7 @@ def test_date_change_reuses_stored_matches(chat):
     say(FIRST)
     say("물놀이 할 수 있는 곳 위주로요")
     pcalls.clear()
-    v = say("모레로 바꿔줘")
+    v = say("모레 오전 10시로 바꿔줘")
     assert v["intent"] == "change_date" and v["result_cards"][0]["name"] == "물놀이장"
     assert pcalls["embed"] == 0
 

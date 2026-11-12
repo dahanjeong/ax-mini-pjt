@@ -41,7 +41,7 @@ from backend.supervisor.cards import build_cards  # noqa: E402
 EVAL_DIR = ROOT / "evaluation"
 TURN_SEP = " >> "
 PROVIDER_TOOLS = ("tour_search", "kakao_search", "facilities", "reviews", "weather", "dust", "llm_judge",
-                  "llm_indoor_outdoor", "keyword_search", "embed")
+                  "llm_indoor_outdoor", "keyword_search", "embed", "drive_minutes")
 OPTIONAL_TOOLS = {"llm_indoor_outdoor", "keyword_search", "embed"}
 WORKERS = 3
 GRADE_ATTEMPTS = 3
@@ -142,6 +142,8 @@ def render(view: dict) -> str:
         lines.append(f"[출발지 후보] {c.get('name')} ({c.get('address', '')})")
     for c in view.get("reference_candidates") or []:
         lines.append(f"[기준 장소 후보] {c.get('name')} ({c.get('address', '')})")
+    if view.get("departure_time"):
+        lines.append(f"[입력] 날짜 {view.get('outing_date')}, 출발 시각 {view['departure_time']}")
     if view.get("max_drive_hours") is not None:
         lines.append(f"[검색 조건] 최대 이동 {view['max_drive_hours']}시간, 반경 {round(view['radius_km'], 1)}km"
                      + (" (확장됨)" if view.get("radius_expanded") else ""))
@@ -150,8 +152,11 @@ def render(view: dict) -> str:
         w, d = c["weather"], c["dust"]
         weather = w.get("status") or f"강수확률 {w.get('precip_prob_max')}%, {w.get('temp_min')}~{w.get('temp_max')}℃ ({w.get('forecast_source')})"
         dust = d.get("status") or f"PM10 {d.get('pm10_grade')}, PM2.5 {d.get('pm25_grade')} ({d.get('forecast_source')})"
+        drv = c.get("drive") or {}
+        drive = (f"차로 약 {drv['minutes']}분" if drv.get("minutes") is not None else drv.get("status", "")) + (
+            f" ({drv['departure_time'].replace('T', ' ')} 출발 기준)" if drv.get("departure_time") else "")
         lines.append(f"[카드 {i}] {c['name']} | 월령 적합도 {c['age_suitability']} | {c['indoor_outdoor']} | "
-                     f"직선거리 {c['distance_km']}km")
+                     f"직선거리 {c['distance_km']}km | 이동시간 {drive}")
         lines.append(f"    편의시설: {fac} | 날씨: {weather} | 대기: {dust}")
         if c["warnings"]:
             lines.append(f"    경고: {', '.join(c['warnings'])}")
@@ -161,6 +166,8 @@ def render(view: dict) -> str:
             m = c["preference_match"]
             lines.append(f"    취향 일치 {m['level']}: " + " / ".join(e["text"] for e in m["evidence"]))
         lines.append("    후기 요약: " + " / ".join(c["review_summary"]))
+        if c.get("review_sources"):
+            lines.append("    후기 출처: " + " / ".join(f"{s['title']} <{s['link']}>" for s in c["review_sources"]))
         if c["failed_sources"]:
             lines.append(f"    불러오지 못한 정보: {', '.join(c['failed_sources'])}")
     return "\n".join(lines)

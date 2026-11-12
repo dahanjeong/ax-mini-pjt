@@ -5,14 +5,24 @@ and review agents (fanned out with Send) -> preference matching -> rank.
            │                 ▲       └─▶ match (nothing new to evaluate)
            ├─ environment ─▶ refresh_env (×stored candidates, Send) ─────────▶ match
            └─ rerank ──────────────────────────────────────────────────────▶ match
-    match ─▶ rank (family-outing order, at most 2 of a kind) ─┬─▶ widen ─▶ search      (full scope, fewer than TOP_N, not widened yet)
+    match ─▶ rank (family-outing order, at most 2 of a kind, drive-time check)
+                   ├─▶ widen ─▶ search      (full scope, fewer than TOP_N, not widened yet)
                    ├─▶ augment ─▶ evaluate / match
                    │              (preference given, fewer than MIN_HIGH_MATCHES "높음",
                    │               keywords not searched yet)
                    └─▶ finish ─▶ END
 
-Stored `candidates` / `evaluations` / `matches` from an earlier turn are passed back in,
-so a narrower scope re-runs only the agents whose inputs changed.
+Drive-time check: the radius (max drive hours x 40 km/h / 1.3) only gathers candidates.
+`rank` asks Kakao Mobility for the expected car travel time of the picks when leaving at
+the user's departure time on the outing date (09:00 when not given; future-traffic directions;
+the next minute when that has already passed today; at most MAX_DRIVE_CHECKS calls per rank): over the age limit -> dropped and the next one picked,
+within it -> "확인됨" with minutes, unchecked (API failure / budget used up / no provider)
+-> "이동시간 확인 필요". An unchecked place is only shown when it lies inside the age
+radius (not the widened one).
+
+Stored `candidates` / `evaluations` / `matches` / `drive_times` from an earlier turn are
+passed back in, so a narrower scope re-runs only the agents whose inputs changed
+(drive times are kept per departure time, so a date or leaving-time change re-checks them).
 """
 from __future__ import annotations
 
@@ -20,6 +30,7 @@ import operator
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Annotated, Any, Callable, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -28,25 +39,29 @@ from langgraph.types import Send
 from ..agents import environment, place, preference, review
 from ..agents import candidates
 from ..agents.candidates import place_key
-from ..core.constants import FACILITY_KEYS, SUIT_RANK
+from ..core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, FACILITY_KEYS, SUIT_RANK
 from .intent import SCOPE_ENVIRONMENT, SCOPE_FULL
-from ..tools import Providers
+from ..tools import Providers, guarded
 
 TOP_N = 5
 MAX_PER_KIND = 2
 MIN_HIGH_MATCHES = 3
+MAX_DRIVE_CHECKS = 10            # Kakao Mobility calls per rank
+OUTING_START_HOUR = 9            # leaving time when none is given (weather uses 09-18)
+KST = timezone(timedelta(hours=9))
 
 MSG_SEARCH = "주변 장소를 찾고 있어요..."
 MSG_WIDEN = "후보가 부족해 검색 반경을 1.5배로 넓혀 다시 찾고 있어요..."
 MSG_REFRESH = "바뀐 날짜의 날씨·미세먼지를 다시 확인하고 있어요..."
 MSG_MATCH = "말씀하신 취향과 장소 설명·후기를 비교하고 있어요..."
 MSG_AUGMENT = "취향에 잘 맞는 곳이 부족해 취향 키워드로 더 찾고 있어요..."
-MSG_DONE = "날씨·편의시설·후기를 확인해 순위를 정했어요."
+MSG_DRIVE = "추천 후보의 실제 차량 이동시간을 확인하고 있어요..."
+MSG_DONE ="날씨·편의시설·후기를 확인해 순위를 정했어요."
 NOTICE_NO_MATCH = "취향 매칭을 하지 못해 기본 순위로 보여드려요."
 
 _ENV_KEYS = ("weather", "dust", "is_bad_day", "bad_day_warnings")
 _REVIEW_KEYS = ("review_evidence_count", "review_insufficient", "age_suitability",
-                "review_summary", "facility_mentions", "mentions_failed", "indoor_outdoor")
+                "review_summary", "review_sources", "facility_mentions", "mentions_failed", "indoor_outdoor")
 
 
 def _count(fac: dict) -> int:
@@ -59,6 +74,7 @@ def merge_place(p: dict, ev: dict) -> dict:
     for k in ("review_evidence_count", "review_insufficient", "age_suitability",
               "review_summary", "indoor_outdoor"):
         out[k] = ev[k]
+    out["review_sources"] = ev.get("review_sources") or []
     fac = place.resolve_facilities(
         p.get("public_facilities"), ev["facility_mentions"], mentions_failed=ev["mentions_failed"]
     )
@@ -103,6 +119,75 @@ def pick_varied(ranked: list[dict], n: int = TOP_N, per_kind: int = MAX_PER_KIND
     return [ranked[i] for i in chosen] + [ranked[i] for i in skipped[:n - len(chosen)]]
 
 
+def departure_time_for(outing_date: str, now: Optional[datetime] = None,
+                       departure_time: Optional[str] = None) -> datetime:
+    """Departure time the drive is estimated for: the user's leaving time ("HH:MM", KST) on the
+    outing date, OUTING_START_HOUR when not given; the next minute when it has already passed."""
+    now = now or datetime.now(KST)
+    hh, mm = (int(x) for x in departure_time.split(":")) if departure_time else (OUTING_START_HOUR, 0)
+    start = datetime.combine(date.fromisoformat(outing_date), dtime(hh, mm), KST)
+    return max(start, (now.astimezone(KST) + timedelta(minutes=1)).replace(second=0, microsecond=0))
+
+
+def drive_status(minutes: Optional[float], limit_min: float, departure_time: str) -> Optional[dict]:
+    """Card `drive` of a place: unchecked -> 이동시간 확인 필요, within the limit -> 확인됨;
+    None when it is over the limit (the place is not recommended)."""
+    if minutes is None:
+        return {"status": DRIVE_UNVERIFIED, "minutes": None, "departure_time": departure_time}
+    if minutes > limit_min:
+        return None
+    return {"status": DRIVE_CONFIRMED, "minutes": minutes, "departure_time": departure_time}
+
+
+def pick_with_drive_check(ranked: list[dict], *, departure: dict, max_drive_hours: float,
+                          departure_time: datetime, drive_times: dict, drive_minutes: Optional[Callable],
+                          max_checks: int = MAX_DRIVE_CHECKS) -> tuple[list[dict], dict, list[str], int]:
+    """`pick_varied`, checking the picks' expected car travel time when leaving at
+    `departure_time` (future traffic): a pick over the limit is dropped and the next one
+    picked, until all picks are checked or `max_checks` calls are used.
+    `drive_times`: "<place_key>@<departure time>" -> minutes (None = the call failed), reused
+    across ranks and turns with the same departure time.
+    Returns (picks with "drive", updated drive_times, failed sources, calls made)."""
+    limit_min = max_drive_hours * 60
+    when = departure_time.strftime("%Y-%m-%dT%H:%M")
+
+    def dk(p: dict) -> str:
+        return f"{place_key(p)}@{when}"
+    age_radius = place.radius_km_for(max_drive_hours)
+    times = dict(drive_times or {})
+    failed: list[str] = []
+    calls = 0
+
+    def allowed(p: dict, can_check: bool) -> bool:
+        k = dk(p)
+        if k in times and times[k] is not None:
+            return times[k] <= limit_min
+        # failed or not checked: shown unverified only inside the age radius; a not-yet-checked
+        # place further out stays eligible while it can still be checked
+        return p["distance_km"] <= age_radius or (can_check and k not in times)
+
+    def check(p: dict) -> tuple[Optional[float], list[str]]:
+        f: list[str] = []
+        minutes = guarded(f, "kakao_navi", drive_minutes, departure["lat"], departure["lng"], p["lat"], p["lng"],
+                          departure_time)
+        return minutes, f
+
+    while True:
+        can_check = drive_minutes is not None and calls < max_checks
+        picks = pick_varied([p for p in ranked if allowed(p, can_check)])
+        todo = [p for p in picks if dk(p) not in times][:max_checks - calls]
+        if not can_check or not todo:
+            break
+        with ThreadPoolExecutor(max_workers=len(todo)) as ex:
+            res = list(ex.map(check, todo))
+        for p, (minutes, f) in zip(todo, res):
+            times[dk(p)] = minutes
+            failed += f
+        calls += len(todo)
+    out = [{**p, "drive": drive_status(times.get(dk(p)), limit_min, when)} for p in picks]
+    return out, times, sorted(set(failed)), calls
+
+
 def _merge_evaluations(old: Optional[dict], new: Optional[dict]) -> dict:
     out = dict(old or {})
     for k, v in (new or {}).items():
@@ -117,6 +202,7 @@ class PipelineState(TypedDict, total=False):
     age_months: int
     travels_during_nap: bool
     outing_date: str
+    departure_time: Optional[str]                # "HH:MM" leaving time (None -> OUTING_START_HOUR)
     preference_text: Optional[str]
     reference: Optional[dict]                    # resolved reference place {"name", "profile"}
     keywords: list[str]                          # preference keywords for the extra search
@@ -126,6 +212,7 @@ class PipelineState(TypedDict, total=False):
     matches: dict                                # place_key -> preference match
     match_query: Optional[list]                  # [preference_text, reference name] the matches are for
     keywords_searched: list[str]
+    drive_times: dict                            # "<place_key>@<departure>" -> car minutes (None = check failed)
     max_drive_hours: Optional[float]
     radius_km: Optional[float]
     radius_expanded: bool
@@ -236,7 +323,14 @@ def build_pipeline(prov: Providers):
     def rank(state: PipelineState) -> dict:
         matches = state.get("matches") or {}
         records = [{**p, "preference_match": matches.get(place_key(p))} for p in state.get("merged") or []]
-        return {"results": pick_varied(rank_places(records))}
+        hours = state.get("max_drive_hours") or place.max_drive_hours(
+            state["age_months"], bool(state.get("travels_during_nap")))
+        picks, times, failed, calls = pick_with_drive_check(
+            rank_places(records), departure=state["departure"], max_drive_hours=hours,
+            departure_time=departure_time_for(state["outing_date"], departure_time=state.get("departure_time")),
+            drive_times=state.get("drive_times") or {}, drive_minutes=prov.drive_minutes)
+        return {"results": picks, "drive_times": times, "failed_sources": failed,
+                "messages": [MSG_DRIVE] if calls else []}
 
     def after_rank(state: PipelineState) -> str:
         results = state.get("results") or []
@@ -292,11 +386,11 @@ def build_pipeline(prov: Providers):
 
 
 _STORED_KEYS = ("candidates", "evaluations", "matches", "match_query", "keywords_searched",
-                "preference_status", "max_drive_hours", "radius_km", "radius_expanded")
+                "drive_times", "preference_status", "max_drive_hours", "radius_km", "radius_expanded")
 
 
 def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int, outing_date: str,
-                 travels_during_nap: bool = False, preference_text: Optional[str] = None,
+                 departure_time: Optional[str] = None, travels_during_nap: bool = False, preference_text: Optional[str] = None,
                  reference: Optional[dict] = None, keywords: Optional[list[str]] = None,
                  stored: Optional[dict] = None) -> dict:
     """Run the pipeline. `stored` = what the last run returned under `_STORED_KEYS`
@@ -310,6 +404,7 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
         "age_months": age_months,
         "travels_during_nap": bool(travels_during_nap),
         "outing_date": outing_date,
+        "departure_time": departure_time,
         "preference_text": preference_text,
         "reference": reference,
         "keywords": list(keywords or []),
@@ -318,6 +413,7 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
         "matches": stored.get("matches") or {},
         "match_query": stored.get("match_query"),
         "keywords_searched": stored.get("keywords_searched") or [],
+        "drive_times": stored.get("drive_times") or {},
         "preference_status": stored.get("preference_status") or "off",
         "max_drive_hours": stored.get("max_drive_hours"),
         "radius_km": stored.get("radius_km"),
@@ -341,6 +437,7 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
         "matches": s.get("matches") or {},
         "match_query": s.get("match_query"),
         "keywords_searched": s.get("keywords_searched") or [],
+        "drive_times": s.get("drive_times") or {},
     }
 
 
@@ -350,6 +447,7 @@ def recommend(
     age_months: int,
     departure: dict,
     outing_date: str,
+    departure_time: Optional[str] = None,
     travels_during_nap: bool = False,
     preference_text: Optional[str] = None,
     keywords: Optional[list[str]] = None,
@@ -357,12 +455,13 @@ def recommend(
 ) -> dict:
     """One-shot full recommendation (no conversation)."""
     out = run_pipeline(build_pipeline(prov), scope=SCOPE_FULL, departure=departure,
-                       age_months=age_months, outing_date=outing_date,
+                       age_months=age_months, outing_date=outing_date, departure_time=departure_time,
                        travels_during_nap=travels_during_nap, preference_text=preference_text,
                        keywords=keywords)
     if progress:
         for m in out["messages"]:
             progress(m)
-    for k in ("messages", "candidates", "evaluations", "matches", "match_query", "keywords_searched"):
+    for k in ("messages", "candidates", "evaluations", "matches", "match_query", "keywords_searched",
+              "drive_times"):
         out.pop(k)
     return out
