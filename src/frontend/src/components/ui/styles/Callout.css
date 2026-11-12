@@ -1,0 +1,3 @@
+/* ui/Callout: shape from .soft-block (commonStyle) */
+.callout[data-tone="notice"] { background: var(--tint-notice); }
+.callout[data-tone="warning"] { background: var(--tint-bad); }

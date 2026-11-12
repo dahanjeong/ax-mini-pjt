@@ -1,0 +1,4 @@
+/* features/chat/commonStyle: one turn of the transcript (Message, PendingTurn) */
+.turn { display: flex; flex-direction: column; gap: var(--space-xs); min-width: 0; }
+.turn.user { align-items: flex-end; }
+.turn.assistant, .turn.error { align-items: flex-start; }

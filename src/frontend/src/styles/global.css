@@ -1,0 +1,50 @@
+/* Hallmark · shape: app screen · genre: playful · theme: Hum (deal 3/3, seed family-weekend-outing-finder-357c·73adaa3f·2026-11-11·r0) · redesign: full
+ * nav: kept shell, a top bar with the wordmark and one restart control over a sticky composer · signature: the five place cards, a pear rank tile over three facility cells · states: empty (welcome and examples), loading (pending bubble), error (error bubble, offline status), full (cards)
+ * axes: light/rounded-sans/chromatic-yellow · posture: full-palette (pear the send action and rank, blue focus, coral warnings, mint good news) · contrast: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R4 V4 · weakest: S, the empty state was a stock greeting over a drawn hill; the three real example questions now carry it as card stock you press, on a torn hill strip */
+/* Hallmark · finish-review: subagent · 6 findings · 5 resolved, 1 declined (emoji icons and avatar, 30a) */
+/* Hallmark · dropped the hill-and-stroller SVG drawing, the emoji avatar and the emoji icons (🧸 🐣 🌳 🏠 🌷 🍼 👶 🚗 📍 ☀️ 🍃 💛 🌼 ⚠) · 80 and 30a name them */
+/* Hallmark · dismissed 63 · the dots inside 날씨·후기 and 수유실·유모차 대여·주차 are Korean list punctuation in a sentence, and weatherText and dustText in format.ts are pinned by format.test.ts */
+/* App shell only: tokens, page, layout. Component styles live next to their components (components/ui, features/chat, features/place). */
+@import url("./tokens.css");
+@import url("./base.css");
+
+:root {
+  --app-width: 760px;
+  --control-s: 40px;
+  --control: 52px;
+  --tile-edge: 5px;
+}
+
+/* scrollIntoView clears the sticky top bar and composer */
+html { scroll-padding-bottom: calc(var(--control) + var(--space-sm) + var(--space-md) + var(--space-md)); }
+
+body {
+  background: var(--grain), var(--fibre), var(--color-paper);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.app {
+  max-width: var(--app-width);
+  margin-inline: auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- transcript ---------- */
+.chat {
+  flex: 1;
+  padding: var(--space-lg) var(--space-md) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+@media (max-width: 480px) {
+  .chat { padding-inline: var(--space-sm); }
+}

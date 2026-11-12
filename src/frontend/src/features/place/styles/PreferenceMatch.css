@@ -1,0 +1,8 @@
+/* features/place/PreferenceMatch: evidence quotes from .soft-cell (commonStyle) */
+.match p { margin-bottom: var(--space-xs); font-size: var(--text-sm); display: flex; gap: var(--space-xs); align-items: center; }
+.match blockquote {
+  margin: var(--space-2xs) 0 0;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--color-ink-2);
+  font-size: var(--text-sm);
+}

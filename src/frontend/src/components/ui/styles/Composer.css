@@ -1,0 +1,21 @@
+/* ui/Composer: pinning and paper from .sticky-bar (commonStyle) */
+.composer {
+  bottom: 0;
+  z-index: var(--z-sticky);
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control);
+  padding: 0 var(--space-md);
+  border: var(--rule-hair) solid var(--color-muted);
+  border-radius: var(--radius-input);
+  background: var(--color-card);
+  color: var(--color-ink);
+}
+.composer-input::placeholder { color: var(--color-muted); }
+.composer-input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.composer-input:disabled { cursor: not-allowed; opacity: 0.55; }

@@ -1,0 +1,13 @@
+/* features/place/commonStyle: shapes shared by the parts of a place card */
+
+/* quiet rounded cell: facility cells, preference evidence */
+.soft-cell {
+  border-radius: var(--radius-stock);
+  background: var(--color-paper-2);
+}
+
+/* small grey side note: places included, sources that failed */
+.muted-note {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}

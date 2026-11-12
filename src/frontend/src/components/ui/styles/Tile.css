@@ -1,0 +1,23 @@
+/* ui/Tile: loaded after Button.css, so these override .stock padding and edge */
+.tile-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); width: 100%; padding-bottom: var(--space-2xs); }
+.example, .choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  text-align: start;
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.example { --edge: 3px; min-height: 44px; padding-block: var(--space-xs); }
+.example:not(:disabled):hover { --edge: 5px; }
+.tile-text { display: block; min-width: 0; }
+.choice-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  border-radius: var(--radius-input);
+  background: var(--color-accent);
+  font-weight: 600;
+}

@@ -3,7 +3,7 @@
 ## 무엇을 푸나
 아기와 나들이 갈 곳을 고를 때 거리·수유실/유모차/주차·날씨·미세먼지·후기를 여러 앱과 블로그에서 따로 찾아 맞춰 봐야 하는 번거로움을, 월령·출발지·날짜·출발 시각만 말하면 조건에 맞는 장소 5곳을 한 번에 추천하는 채팅으로 해결한다.
 
-> 서비스 스펙 상세: [SERVICE.md](SERVICE.md) · 프로젝트 구조: [docs/project-structure.md](docs/project-structure.md) · API 스펙: [docs/api-spec.md](docs/api-spec.md) · 개발 문서: [docs/](docs/)
+> 서비스 스펙 상세: [SERVICE.md](SERVICE.md) · 프로젝트 구조: [docs/project-structure.md](docs/project-structure.md) · 프론트엔드 컴포넌트: [docs/frontend-components.md](docs/frontend-components.md) · API 스펙: [docs/api-spec.md](docs/api-spec.md) · 개발 문서: [docs/](docs/)
 
 ## 활용한 패턴 (Day 1~7)
 [docs/patterns.md](docs/patterns.md)

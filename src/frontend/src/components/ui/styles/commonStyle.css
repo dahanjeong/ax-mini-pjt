@@ -1,0 +1,41 @@
+/* ui/commonStyle: tints and shapes shared by several components (ui and features).
+ * Imported from every file that uses it; the bundler keeps a single copy. */
+
+/* soft status tints over the card colour */
+:root {
+  --tint-good: color-mix(in oklab, var(--color-mint) 40%, var(--color-card));
+  --tint-caution: color-mix(in oklab, var(--color-sand) 40%, var(--color-card));
+  --tint-notice: color-mix(in oklab, var(--color-sand) 30%, var(--color-card));
+  --tint-bad: color-mix(in oklab, var(--color-accent-3) 20%, var(--color-card));
+  --tint-bad-strong: color-mix(in oklab, var(--color-accent-3) 25%, var(--color-card));
+  --tint-accent: color-mix(in oklab, var(--color-accent) 60%, var(--color-card));
+}
+
+/* pill label: Badge, StatusPill */
+.pill {
+  border-radius: var(--radius-pill);
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+}
+
+/* rounded block of small text: Callout */
+.soft-block {
+  color: var(--color-ink);
+  border-radius: var(--radius-stock);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-sm);
+}
+
+/* paper card that floats over the page: hero, place card */
+.surface-paper {
+  background: var(--grain), var(--fibre), var(--color-card);
+  border-radius: var(--radius-card);
+  filter: var(--shadow-paper);
+}
+
+/* bar pinned to the top or bottom of the screen: top bar, composer */
+.sticky-bar {
+  position: sticky;
+  display: flex;
+  background: var(--grain), var(--color-paper);
+}

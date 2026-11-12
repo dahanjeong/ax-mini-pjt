@@ -1,0 +1,28 @@
+/* ui/Bubble */
+.bubble {
+  max-width: 85%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-card);
+  line-height: 1.6;
+  white-space: pre-line;
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+.bubble.assistant { border-start-start-radius: var(--space-2xs); }
+.bubble.assistant.follow { border-start-start-radius: var(--radius-card); }
+.bubble.user {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-start-end-radius: var(--space-2xs);
+  box-shadow: none;
+}
+.bubble.follow { color: var(--color-ink-2); font-size: var(--text-sm); box-shadow: none; background: var(--color-card); border: var(--rule-hair) solid var(--color-rule); }
+.bubble.error {
+  background: var(--tint-bad);
+  color: var(--color-ink);
+  box-shadow: none;
+}
+
+@media (max-width: 480px) {
+  .bubble { max-width: 92%; }
+}

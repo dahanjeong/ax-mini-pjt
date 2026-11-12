@@ -1,0 +1,14 @@
+/* ui/DefinitionList */
+.def-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  font-size: var(--text-sm);
+}
+.def-list > dt,
+.def-list > dd {
+  padding-block: var(--space-xs);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+.def-list > dt { color: var(--color-muted); padding-inline-end: var(--space-md); }
+.def-list > dd { margin: 0; }

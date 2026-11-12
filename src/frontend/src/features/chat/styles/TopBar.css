@@ -1,0 +1,18 @@
+/* features/chat/TopBar: pinning and paper from .sticky-bar (ui commonStyle) */
+.topbar {
+  top: 0;
+  z-index: var(--z-sticky-nav);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.brand { min-width: 0; }
+.brand h1 { font-size: var(--text-xl); max-width: none; line-height: 1.1; }
+.brand p { color: var(--color-muted); font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar-right { display: flex; gap: var(--space-xs); align-items: center; flex: none; }
+
+@media (max-width: 480px) {
+  .brand p { font-size: var(--text-xs); }
+}

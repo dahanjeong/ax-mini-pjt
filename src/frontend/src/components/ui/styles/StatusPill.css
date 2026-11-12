@@ -1,0 +1,5 @@
+/* ui/StatusPill: shape from .pill (commonStyle) */
+.status-pill {
+  background: var(--tint-bad);
+  padding: var(--space-2xs) var(--space-sm);
+}

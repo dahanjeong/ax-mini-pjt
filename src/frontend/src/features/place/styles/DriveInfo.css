@@ -1,0 +1,4 @@
+/* features/place/DriveInfo */
+.drive { color: var(--color-ink-2); }
+.drive-basis { color: var(--color-muted); }
+.drive-unverified { cursor: help; }
