@@ -10,13 +10,20 @@ mini-pjt/
 │   │   ├── tsconfig.json          # strict, 타입만 지울 수 있는 문법 (node가 테스트를 바로 실행)
 │   │   └── src/
 │   │       ├── main.tsx           # 진입점
-│   │       ├── App.tsx            # 채팅 화면 (대화 · 세션 · 후보 선택 · 처리 중 표시)
-│   │       ├── PlaceCard.tsx      # 추천 결과 카드
+│   │       ├── App.tsx            # 화면 조립 (feature 조합 · 입력 상태)
+│   │       ├── components/        # 재사용 컴포넌트 (docs/frontend-components.md)
+│   │       │   ├── base/          # 스타일 없는 Base: 동작 · 시맨틱 · 접근성만
+│   │       │   └── ui/            # Base에 디자인 토큰 스타일을 입힌 컴포넌트 (+ 컴포넌트별 .css)
+│   │       ├── features/          # 도메인 화면 조각 (ui 조합)
+│   │       │   ├── chat/          # 상단바 · 소개 · 예시 질문 · 대화 턴 · useChat(세션·전송)
+│   │       │   └── place/         # 추천 결과 카드 (이동시간 · 편의시설 · 취향 일치 · 후기 출처)
+│   │       ├── hooks/             # 화면 동작 훅 (자동 스크롤 · 응답 후 입력창 포커스)
 │   │       ├── api.ts             # 백엔드 호출 (/chat, /health — 로컬 백엔드만)
 │   │       ├── types.ts           # 백엔드 응답 타입 (api/schemas.py · supervisor/cards.py와 같은 형태)
 │   │       ├── format.ts          # 표시용 함수 (날씨·대기·편의시설·응답 → 말풍선)
 │   │       ├── format.test.ts     # format.ts 테스트 (npm test)
-│   │       └── styles.css
+│   │       ├── tokens.css · base.css  # 디자인 토큰 · 리셋
+│   │       └── styles.css         # 앱 셸 레이아웃만
 │   └── backend/             # FastAPI 백엔드
 │       ├── main.py              # FastAPI 진입점
 │       ├── api/                 # 우리가 제공하는 API
@@ -74,4 +81,5 @@ mini-pjt/
 - 백엔드 모듈은 `src`를 기준으로 import한다 (`from backend.agent import ...`). 서버 실행 시 `--app-dir src`를 준다.
 - 과제 지정 위치인 `agent.py`(메인 에이전트 그래프), `tools.py`(도메인 도구), `retriever.py`(RAG)는 `backend/` 바로 아래에 둔다.
 - 의존 방향: `agent.py` → `supervisor/` → `agents/` → `tools.py` · `prompts/` · `core/`. `integrations/`는 `tools.Providers`의 실제 구현이고, `factory.py`만 이를 조립한다.
+- 프론트엔드 의존 방향: `App.tsx` → `features/` → `components/ui/` → `components/base/`. 아래 계층은 위 계층을 import하지 않는다.
 - API 키는 저장소 루트의 `.env`에만 두며 git에 올리지 않는다.

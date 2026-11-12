@@ -1,0 +1,9 @@
+/* ui/Callout */
+.callout {
+  color: var(--color-ink);
+  border-radius: var(--radius-stock);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-sm);
+}
+.callout[data-tone="notice"] { background: color-mix(in oklab, var(--color-sand) 30%, var(--color-card)); }
+.callout[data-tone="warning"] { background: color-mix(in oklab, var(--color-accent-3) 20%, var(--color-card)); }

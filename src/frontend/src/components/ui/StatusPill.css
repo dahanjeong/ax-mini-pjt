@@ -1,0 +1,8 @@
+/* ui/StatusPill */
+.status-pill {
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  background: color-mix(in oklab, var(--color-accent-3) 22%, var(--color-card));
+  padding: var(--space-2xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+}

@@ -1,0 +1,13 @@
+/* ui/Badge: tone comes from the base layer as data-tone */
+.badge {
+  border-radius: var(--radius-pill);
+  padding: var(--space-3xs) var(--space-sm);
+  background: var(--color-paper-3);
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+}
+.badge[data-tone="good"] { background: color-mix(in oklab, var(--color-mint) 40%, var(--color-card)); }
+.badge[data-tone="caution"] { background: color-mix(in oklab, var(--color-sand) 40%, var(--color-card)); }
+.badge[data-tone="bad"] { background: color-mix(in oklab, var(--color-accent-3) 25%, var(--color-card)); }
+.badge[data-tone="accent"] { background: color-mix(in oklab, var(--color-accent) 60%, var(--color-card)); color: var(--color-accent-ink); }
+.badge[data-tone="muted"] { color: var(--color-ink-2); }

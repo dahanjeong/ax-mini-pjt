@@ -1,0 +1,14 @@
+/* ui/TypingIndicator */
+.bubble.pending { color: var(--color-ink-2); display: flex; gap: var(--space-sm); align-items: center; }
+
+.dots { display: inline-flex; gap: var(--space-2xs); flex: none; }
+.dots i {
+  width: 8px; height: 8px; border-radius: var(--radius-pill);
+  background: var(--color-accent-deep);
+  animation: hop 1s infinite var(--ease-in-out);
+}
+.dots i:nth-child(2) { background: var(--color-accent-2); animation-delay: 0.15s; }
+.dots i:nth-child(3) { background: var(--color-accent-3); animation-delay: 0.3s; }
+@keyframes hop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation-name: breathe; animation-duration: 1.6s; } }
