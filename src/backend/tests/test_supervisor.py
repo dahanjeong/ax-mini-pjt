@@ -593,3 +593,50 @@ def test_rank_from_the_llm_extractor_is_not_kept_as_a_keyword():
     first = recommendation_turn(graph, "n-llm", "30개월 강남역 내일 오전 10시", prov)
     v = recommendation_turn(graph, "n-llm", "2번은 빼주세요", prov)
     assert v["exclude_keywords"] == [first["result_cards"][1]["name"]]
+
+
+# ---------------------------------------------------------------- numbers that are not the age / time
+
+from backend.supervisor.intent import parse_age, parse_time  # noqa: E402
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("3개월 전에 갔던 서울숲 같은 곳", None), ("두 달 전에 갔어요", None), ("6개월 동안 못 갔어요", None),
+    ("3살 때 갔던 곳", None), ("3개월 전에 갔는데 지금은 30개월이에요", 30.0),
+    ("30개월이에요", 30.0), ("30개월 됐어요", 30.0), ("2살 아기", 24.0), ("18개월 아기랑", 18.0),
+])
+def test_parse_age_skips_durations(text, expected):
+    assert parse_age(text, None) == expected
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("10시 이후엔 붐비지 않는 곳으로", None), ("11시 전에는 사람이 많아요", None), ("2시부터 비 온대요", None),
+    ("오후 2시로 바꿔줘", "14:00"), ("10시 이후에 출발할게요", "10:00"), ("11시쯤 갈게요", "11:00"),
+    ("오전 10시", "10:00"), ("10:30쯤 이동할 예정이에요", "10:30"),
+])
+def test_parse_time_skips_times_that_qualify_something_else(text, expected):
+    assert parse_time(text, None) == expected
+
+
+def test_follow_up_numbers_do_not_change_age_or_departure_time(session):
+    new, calls = session
+    say = new()
+    first = say(FIRST)                                        # 30개월, 10:00
+    v = say("3개월 전에 갔던 서울숲 같은 곳은 빼주세요")
+    assert v["baby_age_months"] == 30 and v["missing_inputs"] == [] and v["intent"] != "change_age"
+    v = say("10시 이후엔 붐비지 않는 곳으로")
+    assert v["departure_time"] == "10:00" and v["intent"] != "change_time"
+    assert first["baby_age_months"] == 30
+
+
+def test_llm_does_not_bring_back_a_duration_as_the_age():
+    def extractor(text, awaiting):
+        if "전에" in text:
+            return {"age_months": 3, "time_text": "10시"}          # what a model may read into it
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 11시"}
+
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, now=lambda: NOW, extractor=extractor))
+    prov, _ = make_providers([tp(i, f"장소{i}", 3 + i) for i in range(8)])
+    recommendation_turn(graph, "dur", "30개월 강남역 내일 오전 11시", prov)
+    v = recommendation_turn(graph, "dur", "3개월 전에 갔던 곳이랑 10시 이후엔 붐비는 곳은 빼주세요", prov)
+    assert v["baby_age_months"] == 30 and v["departure_time"] == "11:00"

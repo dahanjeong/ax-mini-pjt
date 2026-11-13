@@ -35,7 +35,7 @@ from .supervisor.intent import (
     classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference, parse_time,
     parse_reference, plan_scope, preference_keywords, search_snapshot, strip_reference,
     EXCLUDE_VERB, is_excluded_keyword, is_kind_word, normalize_exclusion, parse_exclusions, parse_inclusions,
-    strip_exclusions, card_indexes,
+    strip_exclusions, card_indexes, mentions_duration, mentions_qualified_time,
 )
 from .agents import preference as preference_agent
 from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, NO_PREFERENCE_EVIDENCE
@@ -276,7 +276,9 @@ def build_graph(deps: Deps):
                 age = parse_age(text, awaiting)
             except _NonNumeric:
                 non_numeric = True
-            if age is None and not non_numeric and llm.get("age_months") is not None:
+            # "3개월 전에 갔던 곳": the rules skipped a span of time; the model must not read it as the age
+            duration_only = mentions_duration(text) and state.get("baby_age_months") is not None
+            if age is None and not non_numeric and not duration_only and llm.get("age_months") is not None:
                 try:
                     age = float(llm["age_months"])
                 except (TypeError, ValueError):
@@ -328,7 +330,8 @@ def build_graph(deps: Deps):
 
         # ---- departure time
         time_val = parse_time(text, awaiting)
-        if time_val is None and llm.get("time_text"):
+        # "10시 이후엔 붐비지 않는 곳": the rules saw a time that is not the departure; so must the model
+        if time_val is None and llm.get("time_text") and not mentions_qualified_time(text):
             time_val = parse_time(str(llm["time_text"]), awaiting or "time")
         if time_val == NOW:
             time_val = deps.now().strftime("%H:%M")
