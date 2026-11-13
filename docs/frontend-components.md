@@ -108,7 +108,7 @@ components/ui/
 | 폴더 | 컴포넌트 |
 |---|---|
 | `features/chat` | `TopBar`, `Hero`, `ExampleList`, `Message`, `PendingTurn`, `useChat`(대화·세션·서버 상태와 전송·재시작) |
-| `features/place` | `PlaceCard`, `PlaceCardList`, `DriveInfo`, `FacilityGrid`, `PreferenceMatch`, `ReviewSources`, `tones.ts`(백엔드 값 → Badge tone) |
+| `features/place` | `PlaceCard`, `PlaceCardList`, `PlaceImage`(고정 높이 대표 사진, 없거나 실패하면 `assets/place-default.webp`), `DriveInfo`, `FacilityGrid`, `PreferenceMatch`, `ReviewSources`, `tones.ts`(백엔드 값 → Badge tone) |
 
 `hooks/`에는 화면 동작만 담는다: `useChatScroll`(처리 중 말풍선 / 새 답변 시작점으로 스크롤), `useFocusWhenSettled`(응답이 오면 입력창으로 포커스).
 

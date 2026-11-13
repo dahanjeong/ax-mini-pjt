@@ -40,6 +40,8 @@ def merge_places(places: list[dict]) -> list[dict]:
                 m["place_source"] = sorted(set(m["place_source"]) | set(p["place_source"]))
                 m["ids"].update(p["ids"])
                 m["types"] = sorted(set(m["types"]) | set(p["types"]))
+                if not m.get("image") and p.get("image"):    # the Kakao entry came first
+                    m["image"], m["has_image"] = p["image"], True
                 for k, v in p.items():
                     m.setdefault(k, v)
                 break
@@ -65,6 +67,7 @@ def _norm_place(raw: dict, source: str, dep: tuple[float, float]) -> Optional[di
         "distance_km": haversine_km(dep[0], dep[1], float(lat), float(lng)),
         # kept for preselection: TourAPI cat3 code or Kakao category_name, and image presence
         "category": raw.get("category") or (raw.get("description", "") if source == "kakao" else ""),
+        "image": raw.get("image") or "",                # TourAPI representative image (Kakao has none)
         "has_image": bool(raw.get("image")),
     }
 
@@ -101,7 +104,7 @@ def same_facility(a: dict, b: dict) -> bool:
 def group_facilities(places: list[dict]) -> list[dict]:
     """Collapse entries of one facility (Kakao lists zoo sections, rides, ... separately)
     into one candidate shown under the shared name ("서울대공원"); the entries' own names go
-    to `includes`. The representative (whose ids, facilities and location are used): the plain
+    to `includes`. The image is the representative's, else another entry's. The representative (whose ids, facilities and location are used): the plain
     facility entry ("서울대공원") if there is one, else the part with the best outing grade
     once the shared name is removed ("어린이동물원" over "산림욕장"), then the shorter
     name, then a TourAPI-listed one."""
@@ -117,7 +120,9 @@ def group_facilities(places: list[dict]) -> list[dict]:
     for g in groups:
         rep = _representative(g)
         name = _shared_name(g) or rep["name"]
-        out.append({**rep, "name": name, "includes": [m["name"] for m in g if m["name"] != name]})
+        image = rep.get("image") or next((m["image"] for m in g if m.get("image")), "")
+        out.append({**rep, "name": name, "includes": [m["name"] for m in g if m["name"] != name],
+                    "image": image, "has_image": bool(image)})
     return out
 
 

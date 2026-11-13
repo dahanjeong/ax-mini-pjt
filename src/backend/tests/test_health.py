@@ -28,7 +28,7 @@ def test_frontend_has_no_secrets_and_has_dev_script():
     pkg = json.loads((ROOT / "src" / "frontend" / "package.json").read_text(encoding="utf-8"))
     assert "dev" in pkg["scripts"]
     for p in (ROOT / "src" / "frontend" / "src").rglob("*"):
-        if p.is_file():
+        if p.is_file() and p.suffix not in (".webp", ".png", ".jpg", ".jpeg", ".gif", ".ico"):
             body = p.read_text(encoding="utf-8")
             for key in ("KAKAO_KEY", "NAVER_CLIENT", "PUBLIC_DATA_DECODED_KEY", "LANGSMITH_API_KEY"):
                 assert key not in body
