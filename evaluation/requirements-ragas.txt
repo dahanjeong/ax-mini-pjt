@@ -1,0 +1,10 @@
+# RAGAS scoring only (evaluation/run_ragas.py score). Kept out of requirements.txt:
+# ragas 0.4.3 needs Python <= 3.13 (scikit-network has no 3.14 wheel) and
+# langchain-community < 0.4 (ragas imports chat_models.vertexai, removed in 0.4).
+#   uv venv .venv-eval --python 3.12
+#   uv pip install --python .venv-eval/Scripts/python.exe -r evaluation/requirements-ragas.txt
+ragas==0.4.3
+langchain-community<0.4
+langchain-aws
+boto3
+python-dotenv
