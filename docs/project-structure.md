@@ -67,9 +67,9 @@ mini-pjt/
 ├── evaluation/                    # 인-아웃 세트와 자체 평가 결과
 │   ├── test_queries.csv           # 인-아웃 세트 25건 (docs/evaluation.md)
 │   ├── run_eval.py                # 인-아웃 세트 실행 · 채점 · 보고서 생성
-│   ├── run_ragas.py               # RAGAS 평가 (후기 요약 RAG: 샘플 수집 · 채점 · 보고서)
+│   ├── run_ragas.py               # RAGAS 평가 (후기 요약 · 취향 매칭 RAG: 샘플 수집 · 채점 · 보고서)
 │   ├── requirements-ragas.txt     # RAGAS 채점용 의존성 (별도 가상환경 .venv-eval)
-│   ├── results/                   # 결과 원본 (JSON: round1·round2·ragas_samples·ragas_scores)
+│   ├── results/                   # 결과 원본 (JSON: round1·round2·ragas_samples·ragas_preference_samples·ragas_scores)
 │   ├── round1_report.md           # 1차 자체 평가 결과 (12/20)
 │   ├── round2_report.md           # 2차 자체 평가 결과 (22/25)
 │   └── ragas_report.md            # RAGAS 평가 결과
