@@ -1,0 +1,32 @@
+/* features/place/PlaceImage: fixed-height frame; the photo is cropped to fill it (object-fit: cover),
+   so a tall, wide, missing or slow photo never changes the card's height */
+.place-image {
+  position: relative;
+  margin: 0;
+  height: 180px;
+  border-radius: var(--radius-stock);
+  overflow: hidden;
+  background: var(--color-paper-2);
+}
+.place-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+}
+.place-image-credit {
+  position: absolute;
+  inset-inline-end: var(--space-xs);
+  bottom: var(--space-xs);
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: var(--radius-pill);
+  background: oklch(20% 0.014 255 / 0.55);
+  color: var(--color-fringe);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+  .place-image { height: 150px; }
+}

@@ -246,3 +246,11 @@ def test_group_facilities_chains_members():
     ps = [ent("올림픽공원 장미광장", 37.520, km=1), ent("올림픽공원 평화의문", 37.527, km=2),
           ent("올림픽공원 몽촌토성", 37.5345, km=3)]
     assert len(candidates.group_facilities(ps)) == 1
+
+
+def test_group_facilities_takes_an_image_from_another_entry():
+    ps = [ent("서울대공원", 37.4305, km=8.0),
+          dict(ent("서울대공원 동물원", 37.431, src="tourapi", km=7.9), image="https://x.kr/zoo.jpg")]
+    (g,) = candidates.group_facilities(ps)
+    assert g["name"] == "서울대공원"                      # the plain entry (no image) represents
+    assert g["image"] == "https://x.kr/zoo.jpg" and g["has_image"] is True

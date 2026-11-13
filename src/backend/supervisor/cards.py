@@ -10,7 +10,7 @@ from ..prompts.judge import MAX_LINE_CHARS, sanitize_summary
 CARD_FIELDS = (
     "name", "distance_km", "indoor_outdoor", "age_suitability", "facilities",
     "weather", "dust", "is_bad_day", "warnings", "review_summary", "review_sources", "failed_sources",
-    "preference_match", "includes", "drive",
+    "preference_match", "includes", "drive", "image",
 )
 MAX_SOURCES = 3
 MAX_TITLE_CHARS = 80
@@ -56,6 +56,16 @@ def _review_sources(sources: Any) -> list[dict]:
     return out[:MAX_SOURCES]
 
 
+def _image(url: Any) -> Any:
+    """TourAPI representative image as an https URL (its http URLs redirect to https), or None."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    url = url.strip()
+    if url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    return url if url.startswith("https://") and not re.search(r"[\s\"'<>]", url) else None
+
+
 def _drive(d: Any) -> dict:
     """{status: 확인됨 | 이동시간 확인 필요, minutes: int | None, departure_time: "YYYY-MM-DDTHH:MM" | None}"""
     d = d if isinstance(d, dict) else {}
@@ -88,6 +98,7 @@ def build_card(place: dict) -> dict:
         "preference_match": _preference_match(place.get("preference_match")),
         "includes": [str(n) for n in place.get("includes") or []],
         "drive": _drive(place.get("drive")),
+        "image": _image(place.get("image")),
     }
 
 

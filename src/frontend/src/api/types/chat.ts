@@ -61,6 +61,7 @@ export interface PlaceCardData {
   preference_match: PreferenceMatch | null;
   includes: string[];
   drive: Drive;
+  image: string | null; // TourAPI representative photo (https), null -> the client's default image
 }
 
 export interface Candidate {

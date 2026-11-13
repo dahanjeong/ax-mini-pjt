@@ -31,6 +31,8 @@ def _env_values():
     return vals
 
 
+BINARY_SUFFIXES = (".webp", ".png", ".jpg", ".jpeg", ".gif", ".ico")   # bundled images, not code
+
 def _files(*dirs):
     out = []
     for d in dirs:
@@ -67,6 +69,8 @@ def test_frontend_source_has_no_secrets_or_external_api_calls():
 
 def test_frontend_calls_only_the_local_backend():
     for f in _files("src"):
+        if f.suffix in BINARY_SUFFIXES:
+            continue
         for url in re.findall(r"https?://[^\s\"'`/]+", f.read_text(encoding="utf-8")):
             if url == "http://www.w3.org":          # SVG xmlns inside data: URIs, not a request
                 continue

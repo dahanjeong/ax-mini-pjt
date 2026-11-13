@@ -482,3 +482,12 @@ def test_drive_time_uses_the_given_departure_time():
     prov, calls = make_providers([tp(i, f"장소{i}", 5 + i) for i in range(5)])
     recommend(prov, age_months=30, departure=DEP, outing_date="2099-05-02", departure_time="14:30")
     assert {d.strftime("%Y-%m-%d %H:%M") for d in calls["departures"]} == {"2099-05-02 14:30"}
+
+
+def test_merged_place_keeps_the_tourapi_image_when_kakao_comes_first():
+    kakao = dict(kk(1, "국립 어린이 박물관", 10.03), ids={"kakao": "K1"}, place_source=["kakao"],
+                 types=["kakao:CT1"], image="", has_image=False)
+    tour = dict(tp(1, "국립어린이박물관", 10), ids={"tourapi": "T1"}, place_source=["tourapi"],
+                types=["tourapi:14"], image="http://tong.visitkorea.or.kr/a.jpg", has_image=True)
+    (m,) = merge_places([kakao, tour])
+    assert m["image"] == "http://tong.visitkorea.or.kr/a.jpg" and m["has_image"] is True

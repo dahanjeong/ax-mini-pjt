@@ -2,6 +2,7 @@ import { Badge, Callout, DefinitionList } from "../../components/ui/index.ts";
 import { dustText, failedText, includesText, settingLabel, sourceLinks, summaryLines, weatherText } from "./format.ts";
 import { DriveInfo } from "./DriveInfo.tsx";
 import { FacilityGrid } from "./FacilityGrid.tsx";
+import { PlaceImage } from "./PlaceImage.tsx";
 import { PreferenceMatch } from "./PreferenceMatch.tsx";
 import { ReviewSources } from "./ReviewSources.tsx";
 import { SUITABILITY_TONE } from "./tones.ts";
@@ -10,7 +11,7 @@ import "../../components/ui/styles/commonStyle.css";
 import "./styles/commonStyle.css";
 import "./styles/PlaceCard.css";
 
-// One recommended place: rank tile, badges, facilities, weather and air, reviews.
+// One recommended place: photo, rank tile, badges, facilities, weather and air, reviews.
 export function PlaceCard({ card, rank }: PlaceCardProps) {
   const summary = summaryLines(card.review_summary);
   const includes = includesText(card.includes);
@@ -19,6 +20,8 @@ export function PlaceCard({ card, rank }: PlaceCardProps) {
 
   return (
     <article className="surface-paper place-card">
+      <PlaceImage image={card.image} name={card.name} />
+
       <header className="place-head">
         <span className="rank num" aria-label={`${rank}위`}>{rank}</span>
         <div className="place-title">

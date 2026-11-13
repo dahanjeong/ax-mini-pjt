@@ -140,6 +140,7 @@
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `name` | string | 장소명 |
+| `image` | string \| null | 대표 사진 URL (한국관광공사 TourAPI `firstimage`, https로 바꿔서 줌). TourAPI에 사진이 없거나 카카오에서만 찾은 장소는 `null`이며, 화면은 기본 이미지를 보여준다 |
 | `distance_km` | number | 출발지와의 직선거리 (소수 1자리) |
 | `drive` | object | 차량 예상 이동시간 `{status, minutes, departure_time}`. `departure_time`(`"YYYY-MM-DDTHH:MM"`, KST)은 계산 기준 출발 시각(나들이 날짜 + 사용자가 말한 출발 시각)이며, 그 시각의 미래 교통 예측으로 계산한다. `status: "확인됨"`이면 `minutes`(정수, 분, 월령별 최대 이동시간 이하), `"이동시간 확인 필요"`이면 `minutes: null` (길찾기 실패·확인 한도 초과로 반경 기준으로만 추린 후보, 월령별 반경 안의 장소만) |
 | `indoor_outdoor` | `"indoor"` \| `"outdoor"` | 실내/야외 |
