@@ -265,3 +265,22 @@ def test_past_time_today_refused_and_now_accepted():
     assert r["status"] == "ask" and "이미 지난" in r["notice"] and r["departure_time"] is None
     r = chat_turn(graph, "t", "지금 바로요")
     assert r["status"] == "ready" and r["departure_time"] == "15:07"
+
+
+def test_follow_up_after_leaving_time_passed_keeps_the_plan():
+    clock = {"now": datetime(2026, 11, 11, 14, 0)}
+    graph = build_graph(Deps(geocode=geocode, today=lambda: TODAY, now=lambda: clock["now"]))
+    r = chat_turn(graph, "t", "30개월, 강남역에서 오늘 지금 바로 출발")
+    assert r["status"] == "ready" and r["departure_time"] == "14:00"
+    clock["now"] = datetime(2026, 11, 11, 14, 5)
+    r = chat_turn(graph, "t", "실내 위주로 추천해줘")          # not re-asked for the leaving time
+    assert r["status"] == "ready" and r["departure_time"] == "14:00"
+    r = chat_turn(graph, "t", "오후 1시로 바꿔줘")              # a newly said past time is still refused
+    assert r["status"] == "ask" and "이미 지난" in r["notice"]
+
+
+def test_month_day_without_year_rolls_over_at_year_end():
+    dec28 = date(2026, 12, 28)
+    graph = build_graph(Deps(geocode=geocode, today=lambda: dec28, now=lambda: datetime(2026, 12, 28, 8, 0)))
+    r = chat_turn(graph, "t", "30개월, 강남역에서 1월 2일 오전 10시")
+    assert r["status"] == "ready" and r["outing_date"] == "2027-01-02"
