@@ -550,3 +550,46 @@ def test_kind_word_excludes_the_kind_even_when_a_card_name_contains_it():
     recommendation_turn(graph, "k1", "30개월 강남역 내일 오전 10시", prov)
     v = recommendation_turn(graph, "k1", "물놀이 장소는 제외하고 추천해주세요", prov)
     assert v["exclude_keywords"] == ["물놀이"] and not _water([c["name"] for c in v["result_cards"]])
+
+
+# ---------------------------------------------------------------- numbered exclusions
+
+@pytest.mark.parametrize("ask,ranks", [
+    ("2번은 빼주세요", [2]),
+    ("1위는 지난주에 갔어요, 빼주세요", [1]),
+    ("3번째 장소 말고 다른 곳으로", [3]),
+    ("두 번째 곳은 별로예요", [2]),
+    ("1번이랑 4번은 제외해 주세요", [1, 4]),
+])
+def test_numbered_place_is_excluded_not_shown_in_detail(ask, ranks):
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, now=lambda: NOW))
+    prov, _ = make_providers([tp(i, f"장소{i}", 3 + i) for i in range(9)])
+    say = lambda msg: recommendation_turn(graph, f"n-{ask}", msg, prov)
+    first = say(FIRST)
+    gone = [first["result_cards"][r - 1]["name"] for r in ranks]
+    v = say(ask)
+    assert v["intent"] == "change_exclusion" and v["status"] == "ready"
+    names = [c["name"] for c in v["result_cards"]]
+    assert not set(gone) & set(names) and len(names) == 5
+    assert v["exclude_keywords"] == gone                # by name, no "2번" keyword
+
+
+def test_numbered_detail_question_still_shows_the_detail(session):
+    new, _ = session
+    say = new()
+    first = say(FIRST)
+    v = say("두 번째 곳 더 알려줘")
+    assert v["intent"] == "place_detail" and first["result_cards"][1]["name"] in v["reply"]
+
+
+def test_rank_from_the_llm_extractor_is_not_kept_as_a_keyword():
+    def extractor(text, awaiting):
+        if "빼" in text:
+            return {"exclude_keywords": ["2번", "두 번째"]}         # the extractor sees no cards
+        return {"age_months": 30, "departure_query": "강남역", "date_text": "내일", "time_text": "오전 10시"}
+
+    graph = build_graph(Deps(geocode=lambda q: [DEP], today=lambda: TODAY, now=lambda: NOW, extractor=extractor))
+    prov, _ = make_providers([tp(i, f"장소{i}", 3 + i) for i in range(9)])
+    first = recommendation_turn(graph, "n-llm", "30개월 강남역 내일 오전 10시", prov)
+    v = recommendation_turn(graph, "n-llm", "2번은 빼주세요", prov)
+    assert v["exclude_keywords"] == [first["result_cards"][1]["name"]]

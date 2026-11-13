@@ -343,16 +343,28 @@ _PERSONAL_DATA = re.compile(r"기록|내역|로그|히스토리|대화|채팅|�
 _IN_SCOPE = re.compile(r"나들이|놀러|외출|여행|산책|갈\s*(?:곳|데|만한)|가볼|갈래|가요|가려|장소|어디|출발|비슷|\d\s*시(?!간)|빼|제외|말고")
 
 
+_CARD_NUMBER = re.compile(r"(\d+)\s*(?:번째|번|위)|(첫|두|세|네|다섯)\s*번째")
+
+
+def card_indexes(text: str, n_cards: int) -> list[int]:
+    """0-based indexes of the result cards named by rank, in the order said:
+    "2번", "1위", "3번째", "두 번째" (only numbers within the shown cards)."""
+    out: list[int] = []
+    for m in _CARD_NUMBER.finditer(text):
+        k = int(m.group(1)) if m.group(1) else _ORDINALS[m.group(2)]
+        if 1 <= k <= n_cards and k - 1 not in out:
+            out.append(k - 1)
+    return out
+
+
 def detail_index(text: str, card_names: list[str]) -> Optional[int]:
-    """0-based index of the result card the user asks about, if any."""
-    if not card_names:
+    """0-based index of the result card the user asks about, if any. A card named together
+    with an exclusion word ("2번은 빼주세요", "3번째 말고") is left out, not asked about."""
+    if not card_names or EXCLUDE_VERB.search(text):
         return None
-    m = re.search(r"(\d+)\s*(?:번째|번|위)", text)
-    if m and 1 <= int(m.group(1)) <= len(card_names):
-        return int(m.group(1)) - 1
-    m = re.search(r"(첫|두|세|네|다섯)\s*(?:번째)", text)
-    if m and _ORDINALS[m.group(1)] <= len(card_names):
-        return _ORDINALS[m.group(1)] - 1
+    idx = card_indexes(text, len(card_names))
+    if idx:
+        return idx[0]
     if _DETAIL_WORDS.search(text):
         for i, n in enumerate(card_names):
             if n and n in text:
