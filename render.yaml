@@ -1,0 +1,28 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> this repository.
+# Secret values are not stored here (sync: false): enter them in the dashboard.
+services:
+  - type: web
+    name: baby-outing
+    runtime: docker
+    region: singapore          # closest to the Korean public-data / Kakao / NAVER APIs (5 s timeouts)
+    plan: free                 # sleeps after 15 min idle (30-60 s wake-up, chats lost); "starter" stays up
+    numInstances: 1            # chats live in server memory (MemorySaver): keep one instance
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_USERNAME
+        value: family
+      - key: APP_PASSWORD      # shared password for the trial (HTTP Basic auth)
+        sync: false
+      - key: KAKAO_KEY
+        sync: false
+      - key: PUBLIC_DATA_DECODED_KEY
+        sync: false
+      - key: NAVER_CLIENT_ID
+        sync: false
+      - key: NAVER_CLIENT_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false

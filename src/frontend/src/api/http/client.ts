@@ -4,7 +4,9 @@ import axios from "axios";
 import { HttpError } from "./HttpError.ts";
 import type { RequestConfig } from "./types.ts";
 
-export const API_BASE_URL = "http://localhost:8000";
+// dev (Vite on :5173) -> the local backend; a production build is served by the backend
+// itself (Dockerfile / Render), so it calls the same origin
+export const API_BASE_URL = import.meta.env?.DEV ? "http://localhost:8000" : "";
 
 // /chat takes 10-20 s (place search, weather, reviews), so leave room
 export const DEFAULT_TIMEOUT_MS = 60_000;

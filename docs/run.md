@@ -54,6 +54,24 @@ curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
 ```
 연동 서비스는 첫 `/chat` 요청 때 준비된다. `.env` 키가 빠져 있으면 500 `internal error`가 돌아오고 서버 로그에 원인이 남는다.
 
+## Render 배포
+프론트를 빌드해 백엔드가 같은 주소로 함께 제공하는 Docker 웹 서비스 1개로 올린다([Dockerfile](../Dockerfile), [render.yaml](../render.yaml)). 화면이 같은 주소의 `/chat`을 부르므로 API 주소·CORS 설정이 따로 필요 없다.
+
+1. GitHub에 push한 뒤 Render 대시보드 → **New → Blueprint** → 이 저장소를 고르면 `render.yaml`대로 서비스가 만들어진다 (Docker, Singapore 리전, 헬스 체크 `/health`, 인스턴스 1대).
+2. 환경변수 입력 화면에 값을 넣는다. `.env`는 올리지 않는다.
+   - `APP_PASSWORD`: 접속 비밀번호 (사용자 이름은 `APP_USERNAME`, 기본 `family`)
+   - `KAKAO_KEY`, `PUBLIC_DATA_DECODED_KEY`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_KEY`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+   - 선택: `BEDROCK_*`, `LANGSMITH_*`
+3. 배포가 끝나면 `https://<서비스 이름>.onrender.com`을 연다. 브라우저가 사용자 이름·비밀번호를 한 번 묻고, 이후 채팅 요청에는 브라우저가 알아서 붙인다.
+
+주의할 점:
+- **비밀번호:** `APP_PASSWORD`가 없으면 누구나 추천을 돌려 Bedrock 비용과 공공데이터 호출 한도를 쓴다. 반드시 넣는다.
+- **인스턴스는 1대:** 대화 상태를 서버 메모리에 두므로 여러 대로 늘리면 대화가 끊긴다.
+- **무료 플랜:** 15분 동안 요청이 없으면 잠들고, 다음 접속 때 깨어나는 데 30~60초 걸린다(그동안 화면에 "연결 중…"). 잠들거나 다시 배포하면 진행 중인 대화는 사라진다. 계속 켜 두려면 `render.yaml`의 `plan`을 `starter`로 바꾼다.
+- **해외 리전:** 공공데이터·기상청·에어코리아는 싱가포르 서버에서 호출된다. 카드에 "일부 정보를 불러오지 못했어요"가 계속 보이면 해당 API의 해외 접근 여부를 확인한다.
+
+로컬에서 같은 이미지로 확인: `docker build -t baby-outing . && docker run -p 8000:8000 --env-file .env baby-outing` → http://localhost:8000
+
 ## 테스트
 저장소 루트에서:
 ```bash
