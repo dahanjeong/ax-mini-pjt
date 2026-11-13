@@ -56,4 +56,27 @@ python evaluation/run_eval.py --round 1 --report-only   # 저장된 결과로 �
 
 ## 자체 평가 결과
 - 1차: [evaluation/round1_report.md](../evaluation/round1_report.md) — **12 / 20** (positive 3/8, negative 4/4, edge 3/5, guardrail 2/3)
-- 2차: `evaluation/round2_report.md` (예정)
+- 2차: [evaluation/round2_report.md](../evaluation/round2_report.md) — **22 / 25** (positive 8/10, negative 5/5, edge 6/6, guardrail 3/4)
+
+## RAGAS 평가
+
+**대상:** 서비스에서 검색 결과로 LLM이 글을 만드는 곳은 장소별 후기 요약이다(네이버 블로그·카페 검색 → Claude 3줄 요약). 취향 매칭은 생성 없이 근거 문장만 고르므로 RAGAS 대상에서 뺐다.
+
+**샘플:** 인-아웃 세트 #1·2·3·4·8(출발지·월령이 서로 다른 추천 케이스)을 실제 서비스로 돌리고, 후기 요약이 있는 추천 카드마다 샘플 하나를 만든다(`evaluation/run_ragas.py collect`).
+
+| RAGAS 필드 | 값 |
+|---|---|
+| user_input | "{월령} 아기와 '{장소}'에 가려고 해요. 후기를 아기 동반 관점(이용 연령, 유모차·수유실·주차, 머무는 시간, 주의할 점)으로 3줄 요약해 주세요." |
+| retrieved_contexts | 요약 판정에 실제로 들어간 네이버 후기(제목 + 요약문, 최대 10건) |
+| response | 카드에 표시된 3줄 요약 |
+| reference | 공공데이터(TourAPI)의 편의시설 판정(있음/없음) + 개요 앞 3문장. 후기와 독립된 공식 출처. 카카오에서만 찾은 장소는 없음 |
+
+**지표 (ragas 0.4.3, 평가 LLM Claude Sonnet 4.6, 임베딩 Titan V2):**
+- faithfulness: 요약 문장이 후기에 근거하는가 (정책 2 "지어내지 않는다")
+- context_precision: 정답 없이(`LLMContextPrecisionWithoutReference`) 검색된 후기 각각이 요약에 쓸모 있었는가
+- answer_relevancy: 요약이 질문에 맞는 답인가
+- context_recall: 공식 정보를 검색된 후기가 얼마나 담는가 (reference가 있는 샘플만)
+
+**결과 (2026-11-12, 샘플 24개):** context_recall 0.36 · context_precision 0.36 · faithfulness 0.89 · answer_relevancy 0.32. 상세와 해석은 [evaluation/ragas_report.md](../evaluation/ragas_report.md)에 있다. faithfulness는 목표(0.8)를 넘었고 context_precision은 목표(0.7)에 못 미친다. 네이버 요약문은 150자 남짓한 조각이라, 후기 하나하나를 따로 판정하는 지표에서는 0이 많이 나온다.
+
+**실행:** [run.md](run.md#ragas-평가). ragas는 Python 3.14에서 설치되지 않아 채점만 Python 3.12 가상환경(`.venv-eval`)에서 돌린다.

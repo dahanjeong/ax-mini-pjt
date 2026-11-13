@@ -1,0 +1,292 @@
+{
+  "scored": "2026-11-12",
+  "collected": "2026-11-12",
+  "case_ids": [
+    1,
+    2,
+    3,
+    4,
+    8
+  ],
+  "llm": "us-west-2/us.anthropic.claude-sonnet-4-6",
+  "embeddings": "amazon.titan-embed-text-v2:0",
+  "samples": 24,
+  "summary": {
+    "context_recall": 0.362,
+    "context_precision": 0.359,
+    "faithfulness": 0.886,
+    "answer_relevancy": 0.323
+  },
+  "counts": {
+    "context_recall": 13,
+    "context_precision": 24,
+    "faithfulness": 24,
+    "answer_relevancy": 24
+  },
+  "rows": [
+    {
+      "case_id": 1,
+      "rank": 1,
+      "place": "온동물체험농장",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.9090909090909091,
+      "answer_relevancy": 0.39633543643887464,
+      "context_precision": 0.5535714285529761,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 1,
+      "rank": 2,
+      "place": "오마이쥬",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.8333333333333334,
+      "answer_relevancy": 0.38673185507884433,
+      "context_precision": 0.0,
+      "context_recall": 0.4
+    },
+    {
+      "case_id": 1,
+      "rank": 3,
+      "place": "서울대공원",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.3529526048785288,
+      "context_precision": 0.6666666666444444,
+      "context_recall": null
+    },
+    {
+      "case_id": 1,
+      "rank": 4,
+      "place": "서울어린이대공원",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.8888888888888888,
+      "answer_relevancy": 0.3464295283599156,
+      "context_precision": 0.0,
+      "context_recall": null
+    },
+    {
+      "case_id": 1,
+      "rank": 5,
+      "place": "국립중앙박물관 전통염료식물원",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.8333333333333334,
+      "answer_relevancy": 0.20271631294806836,
+      "context_precision": 0.1249999999875,
+      "context_recall": 0.25
+    },
+    {
+      "case_id": 2,
+      "rank": 1,
+      "place": "용인 구갈레스피아",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.7777777777777778,
+      "answer_relevancy": 0.23830465728114444,
+      "context_precision": 0.9999999999,
+      "context_recall": 0.0
+    },
+    {
+      "case_id": 2,
+      "rank": 2,
+      "place": "온동물체험농장",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.3034229990539223,
+      "context_precision": 0.62499999996875,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 2,
+      "rank": 3,
+      "place": "애니멀존",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.2913786820550398,
+      "context_precision": 0.5888888888692593,
+      "context_recall": null
+    },
+    {
+      "case_id": 2,
+      "rank": 4,
+      "place": "백운호수 음식마을",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.0,
+      "context_precision": 0.2916666666520833,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 2,
+      "rank": 5,
+      "place": "오마이쥬",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.7142857142857143,
+      "answer_relevancy": 0.3530807472750868,
+      "context_precision": 0.0,
+      "context_recall": 0.4
+    },
+    {
+      "case_id": 3,
+      "rank": 1,
+      "place": "롯데월드",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.8571428571428571,
+      "answer_relevancy": 0.29458991238014154,
+      "context_precision": 0.9999999999,
+      "context_recall": null
+    },
+    {
+      "case_id": 3,
+      "rank": 2,
+      "place": "매직아일랜드",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.686292540831338,
+      "context_precision": 0.0,
+      "context_recall": null
+    },
+    {
+      "case_id": 3,
+      "rank": 3,
+      "place": "온동물체험농장",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.5064756727549397,
+      "context_precision": 0.5262896825265253,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 3,
+      "rank": 4,
+      "place": "서울어린이대공원",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.9,
+      "answer_relevancy": 0.30258165080867844,
+      "context_precision": 0.0,
+      "context_recall": null
+    },
+    {
+      "case_id": 3,
+      "rank": 5,
+      "place": "국립중앙박물관 전통염료식물원",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.20807189233608805,
+      "context_precision": 0.1249999999875,
+      "context_recall": 0.25
+    },
+    {
+      "case_id": 4,
+      "rank": 1,
+      "place": "오마이쥬",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.3333333333333333,
+      "answer_relevancy": 0.3125079946089489,
+      "context_precision": 0.0,
+      "context_recall": 0.4
+    },
+    {
+      "case_id": 4,
+      "rank": 2,
+      "place": "국립농업박물관",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.9,
+      "answer_relevancy": 0.4551580017961053,
+      "context_precision": 0.249999999975,
+      "context_recall": null
+    },
+    {
+      "case_id": 4,
+      "rank": 3,
+      "place": "수달앤쥬 서수원점",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.2613671187307405,
+      "context_precision": 0.09999999999,
+      "context_recall": null
+    },
+    {
+      "case_id": 4,
+      "rank": 4,
+      "place": "쥬데이",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.13416980653386526,
+      "context_precision": 0.9999999999,
+      "context_recall": null
+    },
+    {
+      "case_id": 4,
+      "rank": 5,
+      "place": "온동물체험농장",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 1.0,
+      "answer_relevancy": 0.3798397852132655,
+      "context_precision": 0.5535714285529761,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 8,
+      "rank": 1,
+      "place": "웅진플레이도시",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.875,
+      "answer_relevancy": 0.1946843253852209,
+      "context_precision": 0.11111111109999999,
+      "context_recall": 0.0
+    },
+    {
+      "case_id": 8,
+      "rank": 2,
+      "place": "쥬벅스 동물체험",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.9,
+      "answer_relevancy": 0.4272750386097417,
+      "context_precision": 0.0,
+      "context_recall": null
+    },
+    {
+      "case_id": 8,
+      "rank": 3,
+      "place": "온동물체험농장",
+      "contexts": 10,
+      "has_reference": true,
+      "faithfulness": 0.6666666666666666,
+      "answer_relevancy": 0.38203590820302924,
+      "context_precision": 0.6488095237933036,
+      "context_recall": 0.5
+    },
+    {
+      "case_id": 8,
+      "rank": 4,
+      "place": "쥬니멀",
+      "contexts": 10,
+      "has_reference": false,
+      "faithfulness": 0.875,
+      "answer_relevancy": 0.3416705284006098,
+      "context_precision": 0.4499999999775,
+      "context_recall": null
+    }
+  ]
+}

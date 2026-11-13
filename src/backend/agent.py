@@ -6,7 +6,7 @@ Graph (LangGraph, in-memory checkpointer keyed by thread_id):
                                   +-> detail -> END            (stored card)
                                   +-> out_of_scope -> END      (also `privacy`: other users' data)
                                   +-> check_age -> check_nap -> check_departure -> check_date
-                                        -> check_reference -> plan -> delegate -> END
+                                        -> check_time -> check_reference -> plan -> delegate -> END
 
 - extract   slots (age, nap, departure, date) + optional preference / reference place
 - check_*   the first missing or invalid required input sets `reply` and ends the turn;
@@ -120,6 +120,7 @@ class ChatState(TypedDict, total=False):
     awaiting: Optional[str]  # age | nap | departure | departure_choice | date | time | reference | reference_choice
     prev_awaiting: Optional[str]
     has_new_input: bool
+    schedule_given: bool                     # outing date or leaving time said in this turn
     missing_inputs: list
     available_date_range: Optional[dict]
     notice: Optional[str]
@@ -432,6 +433,10 @@ def build_graph(deps: Deps):
     def extract(state: ChatState) -> ChatState:
         out = _extract(state)
         out["has_new_input"] = any(k in out for k in _SLOT_KEYS) or bool(out.get("notice"))
+        # the "already past today" check applies to a date / leaving time said in this turn only:
+        # a follow-up ("실내 위주로") after the leaving time has passed keeps the plan
+        # (the drive is then estimated from now, see pipeline.departure_time_for)
+        out["schedule_given"] = "outing_date" in out or "departure_time" in out
         return out
 
     def classify(state: ChatState) -> ChatState:
@@ -572,7 +577,8 @@ def build_graph(deps: Deps):
             }
         now = deps.now()
         # "today" comes from deps.today() like every other date check (tests pin it)
-        if state.get("outing_date") == _fmt(deps.today()) and raw < now.strftime("%H:%M"):
+        if (state.get("schedule_given") and state.get("outing_date") == _fmt(deps.today())
+                and raw < now.strftime("%H:%M")):
             return {
                 "awaiting": "time",
                 "departure_time": None,

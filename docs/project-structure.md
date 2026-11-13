@@ -67,10 +67,20 @@ mini-pjt/
 ├── evaluation/                    # 인-아웃 세트와 자체 평가 결과
 │   ├── test_queries.csv           # 인-아웃 세트 25건 (docs/evaluation.md)
 │   ├── run_eval.py                # 인-아웃 세트 실행 · 채점 · 보고서 생성
-│   ├── results/                   # 차수별 결과 원본 (JSON)
+│   ├── run_ragas.py               # RAGAS 평가 (후기 요약 RAG: 샘플 수집 · 채점 · 보고서)
+│   ├── requirements-ragas.txt     # RAGAS 채점용 의존성 (별도 가상환경 .venv-eval)
+│   ├── results/                   # 결과 원본 (JSON: round1·round2·ragas_samples·ragas_scores)
 │   ├── round1_report.md           # 1차 자체 평가 결과 (12/20)
-│   └── round2_report.md           # 2차 자체 평가 결과 (22/25)
+│   ├── round2_report.md           # 2차 자체 평가 결과 (22/25)
+│   └── ragas_report.md            # RAGAS 평가 결과
 ├── docs/                          # 개발 문서
+│   ├── api-spec.md                # POST /chat API 스펙
+│   ├── architecture.md            # 아키텍처 (Supervisor · 서브에이전트 · RAG)
+│   ├── project-structure.md       # 프로젝트 구조 (이 문서)
+│   ├── frontend-components.md     # 프론트엔드 컴포넌트 구조
+│   ├── run.md                     # 실행 방법
+│   ├── patterns.md                # 활용한 패턴 (Day 1~7)
+│   ├── evaluation.md              # 인-아웃 세트 작성 규칙 · 평가 방법 (자체 평가 · RAGAS)
 │   ├── retrospective.md           # 트라이앤에러 회고
 │   └── dev-log.md                 # 개발 상세 기록 (시간순)
 ├── SERVICE.md                     # 서비스 스펙

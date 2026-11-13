@@ -22,6 +22,7 @@ MIN_AGE, MAX_AGE = 0, 72
 # ---------------------------------------------------------------- slots
 
 _NUM = r"-?\d+(?:\.\d+)?"
+PAST_DAY_WINDOW = 180            # a month/day further back than this means next year
 _WEEKDAYS = {"월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6}
 
 
@@ -66,10 +67,16 @@ def parse_date(text: str, today: date) -> Optional[date]:
             return None
     m = re.search(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일?", text)
     if m:
-        try:
-            return date(today.year, int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            return None
+        # no year: this year, or next year when that is long past ("1월 2일" said on 12월 28일);
+        # a recent day ("11월 1일" on 11월 12일) stays a past date and is refused as such
+        for year in (today.year, today.year + 1):
+            try:
+                d = date(year, int(m.group(1)), int(m.group(2)))
+            except ValueError:                  # 2월 30일, or 2월 29일 outside a leap year
+                continue
+            if (today - d).days <= PAST_DAY_WINDOW:
+                return d
+        return None
     m = re.search(r"(\d+)\s*일\s*(?:뒤|후)", text)
     if m:
         return today + timedelta(days=int(m.group(1)))

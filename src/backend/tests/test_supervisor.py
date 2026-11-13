@@ -107,6 +107,19 @@ def test_weekend_and_weekday_words_leave_the_departure_clean(text, departure, da
     assert parse_date(text, TODAY).isoformat() == day
 
 
+@pytest.mark.parametrize("text,today,day", [
+    ("1월 2일", date(2026, 12, 28), "2027-01-02"),     # long past this year -> next year
+    ("12월 30일", date(2026, 12, 28), "2026-12-30"),
+    ("11월 1일", date(2026, 11, 12), "2026-11-01"),     # recent past stays past (refused later)
+    ("2월 29일", date(2027, 12, 28), "2028-02-29"),     # not in 2027, a leap day in 2028
+    ("2월 30일", date(2026, 11, 12), None),
+])
+def test_month_day_year(text, today, day):
+    from backend.supervisor.intent import parse_date
+    got = parse_date(text, today)
+    assert (got.isoformat() if got else None) == day
+
+
 def test_preference_and_reference_rules():
     assert parse_reference("서울숲 좋았는데 비슷한 곳 추천해줘") == "서울숲"
     assert parse_reference("전에 갔던 국립어린이박물관 같은 곳") == "국립어린이박물관"
