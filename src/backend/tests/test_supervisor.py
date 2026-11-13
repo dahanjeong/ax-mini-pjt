@@ -1,10 +1,11 @@
 """Supervisor: intent judgement and re-run scope for follow-up requests."""
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from backend.agent import Deps, build_graph, recommendation_turn
+from backend.supervisor.pipeline import KST
 from backend.supervisor.intent import (
     SCOPE_ENVIRONMENT, SCOPE_FULL, SCOPE_RERANK, classify_message, parse_preference,
     parse_reference, plan_scope,
@@ -12,6 +13,7 @@ from backend.supervisor.intent import (
 from backend.tests.test_recommendation import DEP, make_providers, tp
 
 TODAY = date(2026, 11, 11)
+NOW = datetime(2026, 11, 11, 9, 0, tzinfo=KST)    # the clock on TODAY ("already passed" checks)
 PANGYO = {"name": "판교역", "address": "성남", "lat": 37.39, "lng": 127.11}
 
 
@@ -32,7 +34,8 @@ def counted(prov):
 
 @pytest.fixture
 def session():
-    graph = build_graph(Deps(geocode=lambda q: [PANGYO] if "판교" in q else [DEP], today=lambda: TODAY))
+    graph = build_graph(Deps(geocode=lambda q: [PANGYO] if "판교" in q else [DEP], today=lambda: TODAY,
+                             now=lambda: NOW))
     prov, _ = make_providers([tp(i, f"장소{i}", 3 + i) for i in range(8)])
     calls = counted(prov)
     counter = {"n": 0}
