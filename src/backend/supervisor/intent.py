@@ -30,12 +30,22 @@ class _NonNumeric(Exception):
     pass
 
 
+# "3개월 전에 갔던", "6개월 동안", "3살 때": a span of time, not the baby's age
+_DURATION_TAIL = r"\s*(?:전|후|뒤|동안|만에|째|간|마다|때)"
+_AGE_DURATION = re.compile(rf"{_NUM}\s*(?:개월|달|살|세){_DURATION_TAIL}")
+
+
+def mentions_duration(text: str) -> bool:
+    return bool(_AGE_DURATION.search(text))
+
+
 def parse_age(text: str, awaiting: Optional[str]) -> Optional[float]:
-    """Return age in months, None when absent. Raises _NonNumeric for a given but non-numeric age."""
-    m = re.search(rf"({_NUM})\s*(?:개월|달)", text)
+    """Return age in months, None when absent. Raises _NonNumeric for a given but non-numeric age.
+    A span of time ("3개월 전에 갔던 곳") is skipped; a later real age in the text still counts."""
+    m = re.search(rf"({_NUM})\s*(?:개월|달)(?!{_DURATION_TAIL})", text)
     if m:
         return float(m.group(1))
-    m = re.search(rf"({_NUM})\s*(?:살|세)(?![가-힣]*\s*(?:이상))", text)
+    m = re.search(rf"({_NUM})\s*(?:살|세)(?!{_DURATION_TAIL})(?![가-힣]*\s*(?:이상))", text)
     if m:
         return float(m.group(1)) * 12
     if "신생아" in text:
@@ -109,14 +119,35 @@ _TIME_TOKENS = re.compile(rf"(?:{_TIME_PERIOD}\s*)?\d{{1,2}}\s*시(?!간)\s*(?:\
                           r"(?<![\d.])(?:[01]?\d|2[0-3])\s*:\s*[0-5]\d(?!\d)")
 
 
+# "10시 이후엔 붐비지 않는 곳", "11시 전에는 사람이 많아요": the time qualifies something else
+_TIME_QUALIFIER = re.compile(r"\s*(?:쯤|경)?\s*(?:이후|이전|전|후|부터|까지|넘어|넘으면|지나|엔|에는|이면|되면)")
+_DEPART_WORDS = re.compile(r"출발|떠나|떠날|나가|나설|이동|갈게|가요|갈래|가려|갈\s*예정|바꿔|변경|(?:으로|로)\s*(?:해|할)")
+
+
+def _departure_match(pattern: re.Pattern, text: str):
+    """First time in `text` that is a departure time: one followed by a qualifier ("이후엔")
+    counts only when the text also says it is about leaving ("10시 이후에 출발할게요")."""
+    leaving = bool(_DEPART_WORDS.search(text))
+    for m in pattern.finditer(text):
+        if leaving or not _TIME_QUALIFIER.match(text, m.end()):
+            return m
+    return None
+
+
+def mentions_qualified_time(text: str) -> bool:
+    """A time is said, but none of them is a departure time ("10시 이후엔 붐비지 않는 곳")."""
+    return bool(_TIME_TOKENS.search(text)) and not (_departure_match(_TIME_COLON, text)
+                                                    or _departure_match(_TIME_HM, text))
+
+
 def parse_time(text: str, awaiting: Optional[str] = None) -> Optional[str]:
     """Departure time as "HH:MM", NOW for "지금 / 바로", None when absent or unclear.
     A bare 1~6시 means the afternoon (13~18시: nobody leaves with a baby at 3 a.m.).
     Vague words ("아침", "오후") count only as the answer to the departure-time question."""
-    m = _TIME_COLON.search(text)
+    m = _departure_match(_TIME_COLON, text)
     if m:
         return f"{int(m.group(1)):02d}:{m.group(2)}"
-    m = _TIME_HM.search(text)
+    m = _departure_match(_TIME_HM, text)
     if m:
         period, h = m.group(1), int(m.group(2))
         minute = 30 if m.group(4) else int(m.group(3) or 0)
