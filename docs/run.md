@@ -1,6 +1,6 @@
 # 실행 방법
 
-요구 사항: Python 3.11+, Node.js 18+
+요구 사항: Python 3.11+, Node.js 22.18+ (`npm test`가 `node --test`로 `.ts` 파일을 바로 실행하므로, 타입 제거가 기본으로 켜진 22.18 이상이 필요하다)
 
 API 키는 저장소 루트의 `.env`에 둔다 (git에 올리지 않음).
 
@@ -14,7 +14,16 @@ API 키는 저장소 루트의 `.env`에 둔다 (git에 올리지 않음).
 ### Bedrock
 - `.env`의 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`로 인증한다. 해당 IAM 사용자에 `bedrock:InvokeModel` 권한이 있어야 한다.
 - AWS 콘솔(us-east-1)의 Bedrock 모델 액세스에서 Claude Sonnet 4.6, Claude Sonnet 4.5, Claude Haiku 4.5, Titan Text Embeddings V2를 활성화해야 한다.
-- 작업별 (지역, 모델) 체인 — 429면 다음 항목으로: 판정은 Sonnet만(us-west-2·ap-northeast-2·us-east-1의 Sonnet 4.6 → Sonnet 4.5), 입력 추출은 Haiku 4.5(ap-northeast-2 → us-east-1 → us-west-2), 실내/야외는 Haiku 4.5(us-west-2 → us-east-1). 세 지역 모두 Bedrock 모델 액세스가 켜져 있어야 한다. 바꾸려면 `.env`에 `BEDROCK_JUDGE_MODELS` 등을 `지역/모델ID,지역/모델ID` 형식으로 넣는다. 임베딩은 `BEDROCK_REGION`(기본 us-east-1)의 `BEDROCK_EMBED_MODEL_ID`(기본 `amazon.titan-embed-text-v2:0`).
+- 작업별 (지역, 모델) 체인 — 429면 다음 항목으로: 판정은 Sonnet만(us-west-2·ap-northeast-2·us-east-1의 Sonnet 4.6 → Sonnet 4.5), 입력 추출은 Haiku 4.5(ap-northeast-2 → us-east-1 → us-west-2), 실내/야외는 Haiku 4.5(us-west-2 → us-east-1). 세 지역 모두 Bedrock 모델 액세스가 켜져 있어야 한다. 바꾸려면 `.env`에 `BEDROCK_JUDGE_MODELS` 등을 `지역/모델ID,지역/모델ID` 형식으로 넣는다. 임베딩은 `BEDROCK_REGION`(기본 us-east-1)의 `BEDROCK_EMBED_MODEL_ID`(기본 `amazon.titan-embed-text-v2:0`), 벡터 차원은 `BEDROCK_EMBED_DIMENSIONS`(기본 512).
+
+### LangSmith 추적 (선택)
+`.env`에 아래 값을 넣으면 LangGraph 실행(슈퍼바이저·서브에이전트 노드)이 LangSmith에 기록된다. 없어도 서비스는 그대로 동작한다.
+
+| 키 | 값 |
+|---|---|
+| `LANGSMITH_TRACING` | `true` |
+| `LANGSMITH_API_KEY` | LangSmith → Settings → API Keys |
+| `LANGSMITH_PROJECT` | 기록할 프로젝트 이름 (없으면 `default`) |
 
 ## 백엔드 (FastAPI, 포트 8000)
 저장소 루트에서:
@@ -30,7 +39,7 @@ cd src/frontend
 npm install
 npm run dev
 ```
-브라우저에서 http://localhost:5173 을 연다. 백엔드(포트 8000)가 먼저 떠 있어야 한다.
+브라우저에서 http://localhost:5173 을 연다(5173이 사용 중이면 Vite가 5174 등으로 옮기며, 그 주소로 열어도 된다). 백엔드(포트 8000)가 꺼져 있으면 상단에 "연결 중…"이 보이고, 백엔드가 뜨면 저절로 사라진다.
 
 타입 검사: `npm run typecheck` · 빌드: `npm run build` (타입 검사 후 빌드) · 화면 표시 함수 테스트: `npm test` (Node 내장 테스트 러너, 추가 의존성 없음)
 

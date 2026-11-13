@@ -52,7 +52,7 @@
 | `reply` | string \| null | 에이전트 응답 문구 (되묻기 질문 등) |
 | `messages` | string[] | 화면에 순서대로 보여줄 메시지 (`reply` + 추천 진행 메시지) |
 | `notice` | string \| null | 안내 문구 (예: 조회 가능한 날짜 안내, 장소가 5곳 미만) |
-| `missing_inputs` | string[] | 빠진 정보: `baby_age_months`, `travels_during_nap`, `departure_location`, `outing_date`, `departure_time` |
+| `missing_inputs` | string[] | 빠진 정보: `baby_age_months`, `travels_during_nap`(24개월 미만일 때 한 번), `departure_location`, `outing_date`, `departure_time`, `reference_place`(기준 장소를 못 찾았거나 여러 곳일 때) |
 | `candidates` | array | 출발지가 애매할 때 후보 목록 |
 | `available_date_range` | object \| null | 날짜가 범위 밖일 때 조회 가능 범위 |
 | `baby_age_months` | number \| null | 확인된 월령 |
@@ -88,8 +88,9 @@
 {
   "session_id": "3f2a9c1e-...",
   "status": "ask",
-  "reply": "아기가 몇 개월인가요?",
-  "messages": ["아기가 몇 개월인가요?"],
+  "intent": "ask",
+  "reply": "아기는 몇 개월인가요? (0~72개월)",
+  "messages": ["아기는 몇 개월인가요? (0~72개월)"],
   "notice": null,
   "missing_inputs": ["baby_age_months", "departure_location", "outing_date", "departure_time"],
   "candidates": [],
@@ -98,40 +99,91 @@
   "travels_during_nap": null,
   "departure_location": null,
   "outing_date": null,
-  "departure_time": null
+  "departure_time": null,
+  "exclude_keywords": [],
+  "include_keywords": [],
+  "preference_text": null,
+  "reference_place": null,
+  "reference_candidates": [],
+  "result_cards": null,
+  "max_drive_hours": null,
+  "radius_km": null,
+  "radius_expanded": null,
+  "failed_sources": null,
+  "elapsed_s": null,
+  "preference_status": null
 }
 ```
 
 ### 예시 2 — 추천
 
+18개월이라 낮잠 질문("이동이 아기 낮잠 시간과 겹치나요?")에 "아니요"로 답한 뒤, 출발 시각을 말한 턴이다.
+
 ```json
 // Request
-{"session_id": "3f2a9c1e-...", "message": "18개월이고 이번 토요일 오전 10시에 강남역에서 출발해요"}
+{"session_id": "3f2a9c1e-...", "message": "오전 10시"}
 
 // Response
 {
   "session_id": "3f2a9c1e-...",
   "status": "ready",
-  "reply": null,
+  "intent": "new_search",
+  "reply": "입력이 모두 확인됐어요 (18개월, 강남역 출발, 2026-11-14 10:00). 추천 장소를 찾아볼게요!",
   "messages": [
+    "입력이 모두 확인됐어요 (18개월, 강남역 출발, 2026-11-14 10:00). 추천 장소를 찾아볼게요!",
     "주변 장소를 찾고 있어요...",
+    "추천 후보의 실제 차량 이동시간을 확인하고 있어요...",
     "날씨·편의시설·후기를 확인해 순위를 정했어요."
   ],
   "notice": null,
   "missing_inputs": [],
   "candidates": [],
-  "available_date_range": null,
+  "available_date_range": {"start": "2026-11-11", "end": "2026-11-21"},
   "baby_age_months": 18,
   "travels_during_nap": false,
-  "departure_location": {"lat": 37.4979, "lng": 127.0276},
+  "departure_location": {"name": "강남역 2호선", "address": "서울 강남구 강남대로 396", "lat": 37.4979, "lng": 127.0276},
   "outing_date": "2026-11-14",
   "departure_time": "10:00",
-  "result_cards": [ /* 결과 카드 최대 5개 */ ],
+  "exclude_keywords": [],
+  "include_keywords": [],
+  "preference_text": null,
+  "reference_place": null,
+  "reference_candidates": [],
+  "result_cards": [
+    {
+      "name": "온동물체험농장",
+      "image": "https://tong.visitkorea.or.kr/cms/resource/57/3514757_image2_1.jpg",
+      "distance_km": 25.1,
+      "drive": {"status": "확인됨", "minutes": 42, "departure_time": "2026-11-14T10:00"},
+      "indoor_outdoor": "indoor",
+      "age_suitability": "적합",
+      "facilities": {
+        "nursing_room": {"label": "수유실", "status": "정보 없음", "source": null},
+        "stroller_rental": {"label": "유모차 대여", "status": "정보 없음", "source": null},
+        "parking": {"label": "주차", "status": "있음", "source": "public_data"}
+      },
+      "weather": {"forecast_source": "short_term", "precip_prob_max": 60, "temp_max": 14, "temp_min": 11},
+      "dust": {"forecast_source": "daily", "pm10_grade": "보통", "pm25_grade": "보통"},
+      "is_bad_day": false,
+      "warnings": [],
+      "review_summary": [
+        "18개월·32개월 아기와 방문한 후기가 있으며, 24개월 미만은 입장료 무료.",
+        "동물 먹이 주기 체험과 모래놀이터를 즐길 수 있고, 실내라 우천 시에도 방문 가능하다.",
+        "약 2시간 머물렀다는 후기가 많고, 전자레인지와 아기의자가 있다."
+      ],
+      "review_sources": [{"title": "34개월 아기랑 시흥 온동물체험농장", "link": "https://blog.naver.com/...", "source": "blog"}],
+      "failed_sources": [],
+      "preference_match": null,
+      "includes": []
+    }
+    /* … 최대 5개 */
+  ],
   "max_drive_hours": 1.5,
   "radius_km": 46.2,
   "radius_expanded": false,
   "failed_sources": [],
-  "elapsed_s": 12.4
+  "elapsed_s": 24.8,
+  "preference_status": "off"
 }
 ```
 
@@ -148,7 +200,7 @@
 | `facilities` | object | `nursing_room`, `stroller_rental`, `parking` 각각 `{label, status, source}` |
 | `facilities.*.status` | string | `있음` · `없음` · `정보 없음` · `정보를 불러오지 못함` |
 | `weather` | object | `{forecast_source, precip_prob_max, temp_max, temp_min}`, 실패 시 `{status}` |
-| `dust` | object | `{pm10_grade, pm25_grade}`, 예보 없음 시 `{status}` |
+| `dust` | object | `{forecast_source, pm10_grade, pm25_grade}` (`forecast_source`: `"daily"` 일별 예보 · `"weekly"` 주간 예보), 예보 없음 시 `{status}` |
 | `is_bad_day` | boolean | 비·미세먼지 나쁨·폭염·한파 여부 |
 | `warnings` | string[] | 경고 문구 (나쁜 날의 야외 장소) |
 | `review_summary` | string[] | 후기 3줄 요약 (없으면 `["후기 정보 없음"]`) |
