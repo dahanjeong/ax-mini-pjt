@@ -5,9 +5,9 @@ import { get, HttpError, post } from "./http/index.ts";
 export class ChatError extends Error {}
 
 export const CHAT_ERROR_MESSAGES = {
-  unreachable: "서버에 연결할 수 없어요. 백엔드가 실행 중인지 확인해 주세요.",
+  unreachable: "지금은 나들이 도우미와 연결이 잠시 끊겼어요. 잠시 후 다시 보내 주세요.",
   invalid: "메시지는 1~500자로 입력해 주세요.",
-  server: "서버에서 문제가 생겼어요. 잠시 후 다시 시도해 주세요.",
+  server: "답을 준비하다가 문제가 생겼어요. 잠시 후 다시 보내 주세요.",
 } as const;
 
 interface ChatRequest {

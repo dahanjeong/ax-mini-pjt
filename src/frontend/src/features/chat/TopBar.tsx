@@ -11,7 +11,7 @@ export function TopBar({ online, canRestart, onRestart }: TopBarProps) {
         <p>우리 가족 주말 나들이, 같이 찾아봐요</p>
       </div>
       <div className="topbar-right">
-        {!online && <StatusPill>서버 연결 안 됨</StatusPill>}
+        {!online && <StatusPill>연결 중…</StatusPill>}
         <Button size="sm" onClick={onRestart} disabled={!canRestart}>
           ↺ 처음부터
         </Button>

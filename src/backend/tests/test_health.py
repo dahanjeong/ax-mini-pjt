@@ -32,3 +32,22 @@ def test_frontend_has_no_secrets_and_has_dev_script():
             body = p.read_text(encoding="utf-8")
             for key in ("KAKAO_KEY", "NAVER_CLIENT", "PUBLIC_DATA_DECODED_KEY", "LANGSMITH_API_KEY"):
                 assert key not in body
+
+
+def test_cors_allows_the_frontend_on_any_local_port_only():
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+
+    client = TestClient(app)
+
+    def allowed(origin):
+        r = client.options("/chat", headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                                             "Access-Control-Request-Headers": "content-type"})
+        return r.headers.get("access-control-allow-origin") == origin
+
+    # Vite moves to 5174 when 5173 is taken: that must not look like a dead server
+    for origin in ("http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5175"):
+        assert allowed(origin), origin
+    for origin in ("http://evil.example", "http://localhost.evil.example", "https://localhost:5173.evil.example"):
+        assert not allowed(origin), origin
