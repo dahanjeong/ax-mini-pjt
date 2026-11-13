@@ -669,6 +669,7 @@ def build_graph(deps: Deps):
             exclude=state.get("exclude_keywords") or [],
             include=state.get("include_keywords") or [],
             stored={k: state.get(k) for k in _STORED_KEYS},
+            now=deps.now(),
         )
         notice = " ".join(n for n in (state.get("notice"), out["notice"]) if n) or None
         return {

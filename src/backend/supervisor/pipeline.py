@@ -226,6 +226,7 @@ def _merge_evaluations(old: Optional[dict], new: Optional[dict]) -> dict:
 class PipelineState(TypedDict, total=False):
     # input
     scope: str
+    now: Optional[datetime]                      # the supervisor's clock (Deps.now); None = wall clock
     departure: dict
     age_months: int
     travels_during_nap: bool
@@ -398,7 +399,8 @@ def build_pipeline(prov: Providers):
             state["age_months"], bool(state.get("travels_during_nap")))
         picks, times, failed, calls = pick_with_drive_check(
             rank_places(records), departure=state["departure"], max_drive_hours=hours,
-            departure_time=departure_time_for(state["outing_date"], departure_time=state.get("departure_time")),
+            departure_time=departure_time_for(state["outing_date"], state.get("now"),
+                                              departure_time=state.get("departure_time")),
             drive_times=state.get("drive_times") or {}, drive_minutes=prov.drive_minutes,
             include=state.get("include") or [])
         return {"results": picks, "drive_times": times, "failed_sources": failed,
@@ -479,14 +481,16 @@ def run_pipeline(pipeline: Any, *, scope: str, departure: dict, age_months: int,
                  departure_time: Optional[str] = None, travels_during_nap: bool = False, preference_text: Optional[str] = None,
                  reference: Optional[dict] = None, keywords: Optional[list[str]] = None,
                  exclude: Optional[list[str]] = None, include: Optional[list[str]] = None,
-                 stored: Optional[dict] = None) -> dict:
+                 stored: Optional[dict] = None, now: Optional[datetime] = None) -> dict:
     """Run the pipeline. `stored` = what the last run returned under `_STORED_KEYS`
-    (ignored for the full scope)."""
+    (ignored for the full scope). `now` = the caller's clock for "already passed" departure
+    times (the supervisor passes Deps.now, so tests and the conversation share one clock)."""
     stored = (stored or {}) if scope != SCOPE_FULL else {}
     t0 = time.monotonic()
     first = MSG_REFRESH if scope == SCOPE_ENVIRONMENT else (MSG_SEARCH if scope == SCOPE_FULL else None)
     s = pipeline.invoke({
         "scope": scope,
+        "now": now,
         "departure": departure,
         "age_months": age_months,
         "travels_during_nap": bool(travels_during_nap),
