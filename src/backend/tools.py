@@ -20,7 +20,7 @@ SLOW_SOURCES = {"llm", "embedding"}
 
 @dataclass
 class Providers:
-    # tour_search/kakao_search(lat, lng, radius_km) -> raw places (region-code based collection)
+    # tour_search/kakao_search(lat, lng, radius_km) -> raw places within the radius (location based)
     tour_search: Callable[[float, float, float], list[dict]]
     kakao_search: Callable[[float, float, float], list[dict]]
     facilities: Callable[[dict], dict]            # public-data facilities: {key: 있음/없음/정보 없음}

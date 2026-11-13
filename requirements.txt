@@ -3,7 +3,6 @@ uvicorn
 httpx
 pytest
 langgraph
-langchain-aws
 # Claude on Bedrock (global.anthropic.claude-sonnet-4-6). Kept below 2.0.0: SDK 2.x sends
 # API version 2026-10-21, which Bedrock accepts only for Claude 4.7 and later.
 anthropic[bedrock]==1.17.0
