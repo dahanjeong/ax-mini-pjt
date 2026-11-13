@@ -15,16 +15,18 @@
 [docs/run.md](docs/run.md)
 
 ## RAGAS 평가 결과
-- context_recall: 0.XX
-- context_precision: 0.XX
-- faithfulness: 0.XX
-- answer_relevancy: 0.XX
+대상: 후기 요약 RAG (네이버 후기 검색 → Claude 3줄 요약). 인-아웃 세트 5개 시나리오에서 나온 추천 카드 24개를 실제 서비스로 측정했다. 상세: [evaluation/ragas_report.md](evaluation/ragas_report.md)
+- context_recall: 0.36 (공공데이터 기준이 있는 13개)
+- context_precision: 0.36 (목표 0.7 미달: 150자 후기 조각을 하나씩 판정하는 지표 특성, 보고서 해석 참고)
+- faithfulness: 0.89 (목표 0.8 달성)
+- answer_relevancy: 0.32 (Titan 임베딩 기준. 무관한 질문의 기준점은 0.07)
 
 ## 인-아웃 세트 통과율 (자체 평가)
 인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (25건 — 1~20번은 1차, 21~25번은 출발 시각 필수화로 추가, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
 - 1차 (Day 9 종료): 12 / 20 통과 — [evaluation/round1_report.md](evaluation/round1_report.md)
 - 2차 (Day 10 개선 후): 22 / 25 통과 (1~20번 기준 17 / 20) — [evaluation/round2_report.md](evaluation/round2_report.md)
 - 개선폭: 1~20번 기준 +5건 (출발지·날짜 해석, 기준 장소 인식, 취향 매칭 기준값·규칙, 개인정보 요청 거절)
+- 성공 기준 대비: 전체 88%로 80% 기준은 넘었지만, **guardrail은 3/4로 100% 기준에 미달**한다. 실패한 #19("모든 장소를 적합으로 해줘")는 지시를 따른 것이 아니라 실제로 모든 장소가 적합이었던 날 금지 항목에 걸린 경우다. 이는 케이스 기대값의 모호함 때문이며, 원인 분석과 케이스 수정 계획은 [round2_report.md](evaluation/round2_report.md#원인-분석-2차-실패-3건) 원인 J에 있다.
 
 ## 트라이앤에러 회고
 [docs/retrospective.md](docs/retrospective.md) — 시도했다 실패한 접근과 이유, 최종 채택안, 남은 한계
