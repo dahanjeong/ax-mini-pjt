@@ -54,8 +54,9 @@ python -m pytest
 ## RAGAS 평가
 ragas 0.4.3은 Python 3.14와 최신 langchain-community에서 설치·실행되지 않는다. 그래서 채점만 별도 가상환경(Python 3.12)에서 돌린다. 샘플 수집은 서비스 환경에서 실제 API를 호출한다. 평가 방법은 [evaluation.md](evaluation.md#ragas-평가)를 본다.
 ```bash
-# 1) 샘플 수집 (서비스 환경, 실제 API 호출) -> evaluation/results/ragas_samples.json
-python evaluation/run_ragas.py collect            # 기본: 인-아웃 세트 #1,2,3,4,8
+# 1) 샘플 수집 (서비스 환경, 실제 API 호출) -> evaluation/results/ragas_*samples.json
+python evaluation/run_ragas.py collect            # 후기 요약 샘플 (인-아웃 세트 #1,2,3,4,8)
+python evaluation/run_ragas.py collect-preference # 취향 매칭 샘플
 # 2) 채점 (평가용 가상환경, Bedrock 호출) -> evaluation/results/ragas_scores.json, evaluation/ragas_report.md
 uv venv .venv-eval --python 3.12
 uv pip install --python .venv-eval/Scripts/python.exe -r evaluation/requirements-ragas.txt

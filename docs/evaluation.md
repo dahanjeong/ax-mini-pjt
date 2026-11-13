@@ -60,23 +60,37 @@ python evaluation/run_eval.py --round 1 --report-only   # 저장된 결과로 �
 
 ## RAGAS 평가
 
-**대상:** 서비스에서 검색 결과로 LLM이 글을 만드는 곳은 장소별 후기 요약이다(네이버 블로그·카페 검색 → Claude 3줄 요약). 취향 매칭은 생성 없이 근거 문장만 고르므로 RAGAS 대상에서 뺐다.
+추천 시나리오를 실제 서비스로 돌리고, 나온 추천 카드마다 샘플을 만들어 잰다(ragas 0.4.3, 평가 LLM Claude Sonnet 4.6, 임베딩 Titan V2).
 
-**샘플:** 인-아웃 세트 #1·2·3·4·8(출발지·월령이 서로 다른 추천 케이스)을 실제 서비스로 돌리고, 후기 요약이 있는 추천 카드마다 샘플 하나를 만든다(`evaluation/run_ragas.py collect`).
+| 지표 | 무엇을 보나 | 샘플 |
+|---|---|---|
+| faithfulness | 후기 3줄 요약의 문장이 검색된 후기에 근거하는가 (정책 2 "지어내지 않는다") | 후기 요약 |
+| answer_relevancy | 후기 요약이 질문에 맞는 답인가 | 후기 요약 |
+| context_recall | 공식 정보(공공데이터)를 검색된 후기가 얼마나 담는가 | 후기 요약 (공공데이터가 있는 카드만) |
+| context_precision | 취향 매칭 벡터 검색이 돌려준 문장이 일치도 판단에 쓸모 있고, 쓸모 있는 문장이 위에 있는가 (`LLMContextPrecisionWithoutReference`) | 취향 매칭 |
+
+**후기 요약 샘플:** 인-아웃 세트 #1·2·3·4·8(출발지·월령이 서로 다른 추천 케이스)에서 후기 요약이 있는 카드마다 하나(`run_ragas.py collect`).
 
 | RAGAS 필드 | 값 |
 |---|---|
 | user_input | "{월령} 아기와 '{장소}'에 가려고 해요. 후기를 아기 동반 관점(이용 연령, 유모차·수유실·주차, 머무는 시간, 주의할 점)으로 3줄 요약해 주세요." |
 | retrieved_contexts | 요약 판정에 실제로 들어간 네이버 후기(제목 + 요약문, 최대 10건) |
 | response | 카드에 표시된 3줄 요약 |
-| reference | 공공데이터(TourAPI)의 편의시설 판정(있음/없음) + 개요 앞 3문장. 후기와 독립된 공식 출처. 카카오에서만 찾은 장소는 없음 |
+| reference | 공공데이터(TourAPI)의 편의시설 판정(있음/없음) + 개요 앞 3문장. 카카오에서만 찾은 장소는 없음 |
 
-**지표 (ragas 0.4.3, 평가 LLM Claude Sonnet 4.6, 임베딩 Titan V2):**
-- faithfulness: 요약 문장이 후기에 근거하는가 (정책 2 "지어내지 않는다")
-- context_precision: 정답 없이(`LLMContextPrecisionWithoutReference`) 검색된 후기 각각이 요약에 쓸모 있었는가
-- answer_relevancy: 요약이 질문에 맞는 답인가
-- context_recall: 공식 정보를 검색된 후기가 얼마나 담는가 (reference가 있는 샘플만)
+**취향 매칭 샘플:** 취향이 있는 인-아웃 세트 #3(실내 위주)·#4(서울숲 같은 곳)·#17(비 와도)과 시나리오 P1(동물 먹이주기 체험)·P2(숲길 산책)에서 취향 일치도가 붙은 카드마다 하나(`run_ragas.py collect-preference`).
 
-**결과 (2026-11-12, 샘플 24개):** context_recall 0.36 · context_precision 0.36 · faithfulness 0.89 · answer_relevancy 0.32. 상세와 해석은 [evaluation/ragas_report.md](../evaluation/ragas_report.md)에 있다. faithfulness는 목표(0.8)를 넘었고 context_precision은 목표(0.7)에 못 미친다. 네이버 요약문은 150자 남짓한 조각이라, 후기 하나하나를 따로 판정하는 지표에서는 0이 많이 나온다.
+| RAGAS 필드 | 값 |
+|---|---|
+| user_input | "아기와 나들이 갈 곳을 찾고 있어요. 원하는 곳: {취향 문장 또는 '서울숲' 같은 곳}. '{장소}'이(가) 여기에 맞는지 판단할 근거가 되는 장소 정보를 찾아 주세요." |
+| retrieved_contexts | 그 장소의 정보 문장 중 벡터 검색이 돌려준 문장, 유사도 높은 순 (질의 문장마다 상위 2개, 서비스와 같은 방식) |
+| response | 카드의 취향 일치도 ("'{장소}'의 취향 일치도는 높음입니다.") |
+
+**결과:** context_recall 0.36 · context_precision 0.63 · faithfulness 0.89 · answer_relevancy 0.32. faithfulness는 목표(0.8)를 넘었고 context_precision은 목표(0.7)에 못 미친다.
+- '비 와도 괜찮은 곳'(#17)은 Titan에서 "실내 장소입니다"와의 유사도가 0.10이라 검색 결과에 실내 문장이 들어오지 않는다. 서비스는 이때 일치도를 실내/야외 판정 규칙으로 정하지만, 이 지표는 검색 결과만 보기 때문에 0점이 된다.
+- '숲길 산책'에 "산책하기 좋은 공원"이 검색된 경우처럼, 비슷한 말을 근거로 인정하지 않는 판정이 있다.
+- answer_relevancy는 Titan이 한국어 유사도를 낮게 압축하는 영향이 크다(무관한 질문의 기준점 0.07).
+
+샘플별 점수와 해석은 [evaluation/ragas_report.md](../evaluation/ragas_report.md)에 있다.
 
 **실행:** [run.md](run.md#ragas-평가). ragas는 Python 3.14에서 설치되지 않아 채점만 Python 3.12 가상환경(`.venv-eval`)에서 돌린다.

@@ -15,11 +15,11 @@
 [docs/run.md](docs/run.md)
 
 ## RAGAS 평가 결과
-대상: 후기 요약 RAG (네이버 후기 검색 → Claude 3줄 요약). 인-아웃 세트 5개 시나리오에서 나온 추천 카드 24개를 실제 서비스로 측정했다. 상세: [evaluation/ragas_report.md](evaluation/ragas_report.md)
-- context_recall: 0.36 (공공데이터 기준이 있는 13개)
-- context_precision: 0.36 (목표 0.7 미달: 150자 후기 조각을 하나씩 판정하는 지표 특성, 보고서 해석 참고)
-- faithfulness: 0.89 (목표 0.8 달성)
-- answer_relevancy: 0.32 (Titan 임베딩 기준. 무관한 질문의 기준점은 0.07)
+실제 서비스로 추천 시나리오를 돌려 나온 추천 카드로 측정했다. 상세: [evaluation/ragas_report.md](evaluation/ragas_report.md)
+- context_recall: 0.36 (후기 요약이 공식 정보를 담는 정도, 공공데이터가 있는 카드 13개)
+- context_precision: 0.63 (취향 매칭 검색 결과의 정확도, 카드 25개. 목표 0.7 미달 — '비 와도 괜찮은 곳'은 검색이 실내 문장을 못 찾아 서비스가 실내/야외 규칙으로 보완한다)
+- faithfulness: 0.89 (후기 요약이 후기에 근거하는 정도, 카드 24개. 목표 0.8 달성)
+- answer_relevancy: 0.32 (후기 요약이 질문에 맞는 정도, Titan 임베딩 기준. 무관한 질문의 기준점은 0.07)
 
 ## 인-아웃 세트 통과율 (자체 평가)
 인-아웃 세트: [evaluation/test_queries.csv](evaluation/test_queries.csv) (25건 — 1~20번은 1차, 21~25번은 출발 시각 필수화로 추가, 작성 규칙은 [docs/evaluation.md](docs/evaluation.md))
