@@ -35,7 +35,7 @@ from .supervisor.intent import (
     classify_message, parse_age, parse_date, parse_departure, parse_nap, parse_preference, parse_time,
     parse_reference, plan_scope, preference_keywords, search_snapshot, strip_reference,
     EXCLUDE_VERB, is_excluded_keyword, is_kind_word, normalize_exclusion, parse_exclusions, parse_inclusions,
-    strip_exclusions,
+    strip_exclusions, card_indexes,
 )
 from .agents import preference as preference_agent
 from .core.constants import DRIVE_CONFIRMED, DRIVE_UNVERIFIED, NO_PREFERENCE_EVIDENCE
@@ -209,8 +209,8 @@ def _card_text(i: int, c: dict) -> str:
 
 def _excluded_places(text: str, llm_terms: list, cards: list[dict]) -> tuple[list[str], list[str]]:
     """Names of recommended places the user asks to leave out: a card name (or a 4+ letter
-    part of it: "어린이대공원" -> 서울어린이대공원) mentioned together with an exclusion word,
-    or named by the LLM extractor's exclude_keywords. Also returns the words of `text` that
+    part of it: "어린이대공원" -> 서울어린이대공원) or its rank ("2번", "1위", "두 번째")
+    mentioned together with an exclusion word, or named by the LLM extractor's exclude_keywords. Also returns the words of `text` that
     named them, so they are not read as a preference."""
     flat = re.sub(r"\s+", "", text)
     terms = [re.sub(r"\s+", "", str(t)) for t in llm_terms]
@@ -218,6 +218,12 @@ def _excluded_places(text: str, llm_terms: list, cards: list[dict]) -> tuple[lis
     words = [re.sub(r"(?:에서|이랑|을|를|은|는|가|도|에|랑)$", "", w) for w in re.findall(r"[가-힣A-Za-z0-9]+", text)]
     out: list[str] = []
     said: list[str] = []
+    if has_verb:
+        for i in card_indexes(text, len(cards)):
+            name = str(cards[i].get("name") or "")
+            if name and name not in out:
+                out.append(name)
+                said.append(name)
     for c in cards:
         name = str(c.get("name") or "")
         key = re.sub(r"\s+", "", name)
