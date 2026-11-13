@@ -85,6 +85,8 @@ mini-pjt/
 │   └── dev-log.md                 # 개발 상세 기록 (시간순)
 ├── SERVICE.md                     # 서비스 스펙
 ├── requirements.txt               # 백엔드 Python 의존성
+├── Dockerfile                     # 배포 이미지 (프론트 빌드 + FastAPI가 같은 주소로 제공)
+├── render.yaml                    # Render 배포 설정 (docs/run.md#render-배포)
 ├── pytest.ini                     # 테스트 설정 (pythonpath = src)
 └── README.md
 ```
